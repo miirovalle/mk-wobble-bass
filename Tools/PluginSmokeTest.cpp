@@ -203,10 +203,12 @@ int main (int argc, char** argv)
         {
             if (auto* button = dynamic_cast<juce::TextButton*> (child))
             {
-                if (button->getButtonText() == "GATE")
+                const auto text = button->getButtonText();
+
+                if (text == "GATE" || text == "LFO")
                 {
                     if (button->onClick != nullptr) button->onClick();
-                    renderTo (*editor, "editor_gate.png");
+                    renderTo (*editor, "editor_" + text.toLowerCase() + ".png");
                     if (button->onClick != nullptr) button->onClick();
                 }
             }

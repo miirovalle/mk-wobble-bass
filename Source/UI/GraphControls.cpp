@@ -440,6 +440,325 @@ void WaveScope::paint (juce::Graphics& g)
 }
 
 //==============================================================================
+namespace
+{
+
+struct LfoTarget
+{
+    const char* name;
+    int destination;
+};
+
+const std::array<LfoTarget, 9>& lfoTargets()
+{
+    static const std::array<LfoTarget, 9> targets { {
+        { "OSC 1",  (int) DstOsc1Level },   // its own layer
+        { "OSC 2",  (int) DstOsc2Level },
+        { "OSC 3",  (int) DstOsc3Level },
+        { "CUTOFF", (int) DstCutoff },
+        { "RESO",   (int) DstReso },
+        { "PITCH",  (int) DstPitch },
+        { "WAVE",   (int) DstWtPos1 },
+        { "DRIVE",  (int) DstDrive },
+        { "WIDTH",  (int) DstWidth }
+    } };
+
+    return targets;
+}
+
+// Drawable view of an LFO shape; the random shapes are hashed per segment so
+// the picture is stable instead of flickering.
+float lfoPictureValue (int shape, float phase01)
+{
+    const float p = phase01 - std::floor (phase01);
+
+    switch (shape)
+    {
+        case LfoRandom:
+        case LfoSampleHold:
+        {
+            const int segment = (int) (p * 8.0f);
+            uint32_t h = (uint32_t) (segment + 1) * 2654435761u;
+            h ^= h >> 13;
+            const float v = (float) (h & 0xffffu) / 32768.0f - 1.0f;
+            return shape == LfoRandom ? v : std::floor (v * 4.0f) * 0.25f;
+        }
+
+        case LfoStairs:
+            return shapeValue (ShapeCustom, p, 0.8f);
+
+        default:
+            return shapeValue (lfoShapeToWobbleShape (shape), p, 0.0f);
+    }
+}
+
+const char* lfoShapeName (int shape)
+{
+    static const char* const names[] = { "SINE", "TRI", "SAW DN", "SAW UP", "SQUARE", "RANDOM",
+                                         "PULSE", "RAMP", "S&H", "STAIRS" };
+    return names[juce::jlimit (0, 9, shape)];
+}
+
+} // namespace
+
+LfoSlot::LfoSlot (juce::AudioProcessorValueTreeState& state, int lfoIndex)
+    : apvts (state), lfo (juce::jlimit (0, 2, lfoIndex))
+{
+    // Each LFO owns one mod matrix slot, so every LFO can drive its own layer.
+    const int matBase = (int) P::mat1Src + lfo * 3;
+    const int existingSource = (int) readPlain (apvts, matBase);
+
+    if (existingSource == 0)
+    {
+        // Untouched slot: default this LFO to its own oscillator layer.
+        target = juce::jlimit (0, (int) lfoTargets().size() - 1, lfo);
+        applyRouting();
+    }
+    else
+    {
+        const int destination = (int) readPlain (apvts, matBase + 1);
+
+        for (int i = 0; i < (int) lfoTargets().size(); ++i)
+            if (lfoTargets()[(size_t) i].destination == destination)
+                target = i;
+    }
+
+    // An LFO with no depth is inaudible; give the first session some movement.
+    const int base = (int) P::lfo1Sync + lfo * 9;
+
+    if (readPlain (apvts, base + 4) <= 0.0f)
+        writePlain (apvts, base + 4, 0.7f);
+
+    startTimerHz (20);
+}
+
+void LfoSlot::applyRouting()
+{
+    const int matBase = (int) P::mat1Src + lfo * 3;
+
+    writePlain (apvts, matBase, (float) (SrcLfo1 + lfo));
+    writePlain (apvts, matBase + 1, (float) lfoTargets()[(size_t) target].destination);
+    writePlain (apvts, matBase + 2, 1.0f);
+}
+
+void LfoSlot::cycleShape()
+{
+    const int base = (int) P::lfo1Sync + lfo * 9;
+    const int shape = (int) readPlain (apvts, base + 3);
+    writePlain (apvts, base + 3, (float) ((shape + 1) % 10));
+    repaint();
+}
+
+void LfoSlot::cycleTarget()
+{
+    target = (target + 1) % (int) lfoTargets().size();
+    applyRouting();
+    repaint();
+}
+
+void LfoSlot::toggleSync()
+{
+    const int base = (int) P::lfo1Sync + lfo * 9;
+    const bool synced = readPlain (apvts, base) > 0.5f;
+    writePlain (apvts, base, synced ? 0.0f : 1.0f);
+    repaint();
+}
+
+juce::Rectangle<int> LfoSlot::headerArea() const
+{
+    return getLocalBounds().reduced (10, 8).removeFromTop (16);
+}
+
+juce::Rectangle<int> LfoSlot::curveArea() const
+{
+    auto bounds = getLocalBounds().reduced (10, 8);
+    bounds.removeFromTop (20);
+    bounds.removeFromBottom (22);
+    return bounds;
+}
+
+juce::Rectangle<int> LfoSlot::syncArea() const
+{
+    return getLocalBounds().reduced (10, 8).removeFromBottom (16).removeFromLeft (44);
+}
+
+juce::Rectangle<int> LfoSlot::targetArea() const
+{
+    auto row = getLocalBounds().reduced (10, 8).removeFromBottom (16);
+    row.removeFromLeft (50);
+    return row.removeFromLeft (74);
+}
+
+void LfoSlot::timerCallback()
+{
+    if (! isVisible())
+        return;
+
+    const int base = (int) P::lfo1Sync + lfo * 9;
+    const float rate = juce::jlimit (0.01f, 30.0f, readPlain (apvts, base + 2));
+
+    displayPhase += juce::jlimit (0.0f, 0.25f, rate / 20.0f);
+
+    if (displayPhase >= 1.0f)
+        displayPhase -= std::floor (displayPhase);
+
+    repaint();
+}
+
+void LfoSlot::paint (juce::Graphics& g)
+{
+    auto area = getLocalBounds().toFloat().reduced (2.0f);
+
+    g.setColour (theme::panel());
+    g.fillRoundedRectangle (area, 12.0f);
+    g.setColour (theme::outline());
+    g.drawRoundedRectangle (area, 12.0f, 1.0f);
+
+    const int base = (int) P::lfo1Sync + lfo * 9;
+    const bool synced = readPlain (apvts, base) > 0.5f;
+    const int shape = (int) readPlain (apvts, base + 3);
+    const float depth = juce::jlimit (0.0f, 1.0f, readPlain (apvts, base + 4));
+
+    auto header = headerArea();
+
+    g.setColour (theme::accentBright());
+    g.setFont (theme::labelFont (11.0f));
+    g.drawFittedText ("LFO " + juce::String (lfo + 1), header.removeFromLeft (46),
+                      juce::Justification::centredLeft, 1);
+
+    g.setColour (theme::textDim());
+    g.setFont (theme::valueFont (10.5f));
+    g.drawFittedText (juce::String (lfoShapeName (shape)) + " (tap)", header,
+                      juce::Justification::centredRight, 1);
+
+    const auto curve = curveArea().toFloat();
+    g.setColour (theme::panelLight().withAlpha (0.45f));
+    g.fillRoundedRectangle (curve, 8.0f);
+
+    const auto centreY = curve.getCentreY();
+    const float amplitude = curve.getHeight() * 0.44f * juce::jmax (0.15f, depth);
+
+    const int steps = juce::jmax (32, (int) curve.getWidth());
+
+    juce::Path path;
+    for (int i = 0; i <= steps; ++i)
+    {
+        const float t = (float) i / (float) steps;
+        const float phase = displayPhase + t * 2.0f;
+
+        const float v = lfoPictureValue (shape, phase);
+
+        const float x = curve.getX() + t * curve.getWidth();
+        const float y = centreY - v * amplitude;
+
+        if (i == 0)
+            path.startNewSubPath (x, y);
+        else
+            path.lineTo (x, y);
+    }
+
+    g.setColour (theme::accent().withAlpha (0.25f));
+    g.strokePath (path, juce::PathStrokeType (5.0f, juce::PathStrokeType::curved));
+    g.setColour (theme::accentBright());
+    g.strokePath (path, juce::PathStrokeType (1.8f, juce::PathStrokeType::curved));
+
+    const float playX = curve.getX() + curve.getWidth() * (displayPhase - std::floor (displayPhase)) * 0.5f;
+    g.setColour (theme::text().withAlpha (0.7f));
+    g.drawVerticalLine ((int) playX, curve.getY(), curve.getBottom());
+
+    auto pill = syncArea().toFloat();
+    g.setColour (synced ? theme::accentDeep() : theme::panelLight());
+    g.fillRoundedRectangle (pill, 5.0f);
+    g.setColour (synced ? theme::text() : theme::textDim());
+    g.setFont (theme::labelFont (9.5f));
+    g.drawFittedText (synced ? "SYNC" : "FREE", pill.toNearestInt(), juce::Justification::centred, 1);
+
+    auto chip = targetArea().toFloat();
+    g.setColour (theme::panelLight());
+    g.fillRoundedRectangle (chip, 5.0f);
+    g.setColour (theme::text());
+    g.setFont (theme::labelFont (9.5f));
+    g.drawFittedText (lfoTargets()[(size_t) target].name, chip.toNearestInt(),
+                      juce::Justification::centred, 1);
+
+    g.setColour (theme::textDim());
+    g.setFont (theme::valueFont (10.0f));
+
+    juce::String rateLabel;
+
+    if (synced)
+    {
+        int divisions = 0;
+        const auto* table = syncDivisions (divisions);
+        const int index = juce::jlimit (0, divisions - 1, (int) readPlain (apvts, base + 1));
+        rateLabel = table[index].name;
+    }
+    else
+    {
+        rateLabel = juce::String (readPlain (apvts, base + 2), 2) + " Hz";
+    }
+
+    g.drawFittedText (rateLabel,
+                      getLocalBounds().reduced (10, 8).removeFromBottom (16).removeFromRight (92),
+                      juce::Justification::centredRight, 1);
+}
+
+void LfoSlot::mouseDown (const juce::MouseEvent& event)
+{
+    const auto point = event.getPosition();
+
+    if (headerArea().contains (point))
+    {
+        cycleShape();
+        return;
+    }
+
+    if (syncArea().contains (point))
+    {
+        toggleSync();
+        return;
+    }
+
+    if (targetArea().contains (point))
+    {
+        cycleTarget();
+        return;
+    }
+
+    dragging = true;
+    mouseDrag (event);
+}
+
+void LfoSlot::mouseDrag (const juce::MouseEvent& event)
+{
+    if (! dragging)
+        return;
+
+    const int base = (int) P::lfo1Sync + lfo * 9;
+    const auto curve = curveArea().toFloat();
+
+    if (curve.getWidth() < 1.0f || curve.getHeight() < 1.0f)
+        return;
+
+    const float nx = juce::jlimit (0.0f, 1.0f, (event.position.x - curve.getX()) / curve.getWidth());
+    const float ny = juce::jlimit (0.0f, 1.0f, (event.position.y - curve.getY()) / curve.getHeight());
+    const bool synced = readPlain (apvts, base) > 0.5f;
+
+    if (synced)
+    {
+        const float division = std::round (nx * 15.0f);
+        writePlain (apvts, base + 1, division);
+    }
+    else
+    {
+        writePlain (apvts, base + 2, juce::jmap (nx, 0.01f, 30.0f));
+    }
+
+    writePlain (apvts, base + 4, 1.0f - ny);
+    repaint();
+}
+
+//==============================================================================
 LevelMeter::LevelMeter (const Engine& engineToUse) : engine (engineToUse)
 {
     setInterceptsMouseClicks (false, false);

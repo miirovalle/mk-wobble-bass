@@ -192,15 +192,20 @@ public:
         const float pw1 = clampf (p.osc1Pw + mod[DstPw] * 0.45f, 0.05f, 0.95f);
         const float pw2 = clampf (p.osc2Pw + mod[DstPw] * 0.45f, 0.05f, 0.95f);
 
-        osc1Active = p.osc1Level > 0.0008f;
-        osc2Active = p.osc2Level > 0.0008f || (p.osc2Mode == 1 && p.osc2Fm > 0.0008f);
-        osc3Active = p.osc3Level > 0.0008f;
+        // Level modulation is what lets a layer be gated purely by its LFO.
+        const float level1 = clampf (p.osc1Level + mod[DstOsc1Level], 0.0f, 1.0f);
+        const float level2 = clampf (p.osc2Level + mod[DstOsc2Level], 0.0f, 1.0f);
+        const float level3 = clampf (p.osc3Level + mod[DstOsc3Level], 0.0f, 1.0f);
+
+        osc1Active = level1 > 0.0008f;
+        osc2Active = level2 > 0.0008f || (p.osc2Mode == 1 && p.osc2Fm > 0.0008f);
+        osc3Active = level3 > 0.0008f;
         subActive = p.subLevel > 0.0008f;
 
         if (osc1Active)
         {
             osc1.configure (p.osc1Wave, p.osc1Bank, pos1, std::min ((int) p.osc1Uni, unisonCap),
-                            p.osc1Detune, p.osc1Spread, pw1, p.osc1Level, cubic);
+                            p.osc1Detune, p.osc1Spread, pw1, level1, cubic);
             osc1.setPitch (pitchBase + p.osc1Semis);
         }
 
@@ -210,13 +215,13 @@ public:
                                   + mod[DstOsc2Pitch] * kPitchModSemitones;
             osc2.configure (p.osc2Wave, p.osc2Bank, pos2, std::min ((int) p.osc2Uni, unisonCap),
                             p.osc2Detune, p.osc2Spread, pw2,
-                            p.osc2Mode == 1 ? std::max (p.osc2Level, 0.0f) : p.osc2Level, cubic);
+                            p.osc2Mode == 1 ? std::max (level2, 0.0f) : level2, cubic);
             osc2.setPitch (osc2Pitch + (p.osc2Mode == 1 ? 12.0f * std::log2 (std::max (p.osc2Ratio, 0.01f)) : 0.0f));
         }
 
         if (osc3Active)
         {
-            osc3.configure (p.osc3Wave, p.osc3Bank, pos3, 1, 0.0f, 0.0f, 0.5f, p.osc3Level, cubic);
+            osc3.configure (p.osc3Wave, p.osc3Bank, pos3, 1, 0.0f, 0.0f, 0.5f, level3, cubic);
             osc3.setPitch (pitchBase + p.osc3Semis);
         }
 

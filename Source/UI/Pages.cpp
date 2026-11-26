@@ -193,4 +193,34 @@ void GatePage::resized()
                                                             juce::jmin (56, buttonCell.getHeight())));
 }
 
+//==============================================================================
+LfoPage::LfoPage (juce::AudioProcessorValueTreeState& state)
+{
+    for (int i = 0; i < 3; ++i)
+    {
+        slots[(size_t) i] = std::make_unique<LfoSlot> (state, i);
+        addAndMakeVisible (*slots[(size_t) i]);
+    }
+}
+
+void LfoPage::paint (juce::Graphics& g)
+{
+    juce::ignoreUnused (g);
+}
+
+void LfoPage::resized()
+{
+    auto area = getLocalBounds();
+
+    // Keep the pictures at a readable height instead of stretching them over
+    // the whole page.
+    const int slotHeight = juce::jmin (area.getHeight(), 420);
+    area = area.withHeight (slotHeight).withY (area.getCentreY() - slotHeight / 2);
+
+    const int slotWidth = area.getWidth() / 3;
+
+    for (int i = 0; i < 3; ++i)
+        slots[(size_t) i]->setBounds (area.removeFromLeft (slotWidth).reduced (i == 0 ? 0 : 4, 0));
+}
+
 } // namespace mk

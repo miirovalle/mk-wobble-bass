@@ -63,4 +63,18 @@ private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (GatePage)
 };
 
+class LfoPage final : public juce::Component
+{
+public:
+    explicit LfoPage (juce::AudioProcessorValueTreeState&);
+
+    void paint (juce::Graphics&) override;
+    void resized() override;
+
+private:
+    std::array<std::unique_ptr<LfoSlot>, 3> slots;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (LfoPage)
+};
+
 } // namespace mk

@@ -42,6 +42,23 @@ inline float shapeValue (int shape, float phase01, float customMix) noexcept
     }
 }
 
+// LFO shapes reuse the wobble shape table, but the two enums order the saws
+// differently, so map explicitly instead of casting.
+inline int lfoShapeToWobbleShape (int shape) noexcept
+{
+    switch (shape)
+    {
+        case LfoSine:       return ShapeSine;
+        case LfoTriangle:   return ShapeTriangle;
+        case LfoSawDown:    return ShapeSawDown;
+        case LfoSawUp:      return ShapeSawUp;
+        case LfoSquare:     return ShapeSquare;
+        case LfoPulse:      return ShapePulse;
+        case LfoRamp:       return ShapeRamp;
+        default:            return ShapeSine;
+    }
+}
+
 class ModLfo
 {
 public:
@@ -92,7 +109,7 @@ public:
         if (phase >= 1.0f)
         {
             phase -= std::floor (phase);
-            if (shape == LfoRandom || shape >= ShapeRandom)
+            if (shape == LfoRandom || shape == LfoSampleHold)
                 holdValue = rng.nextBipolar();
         }
         if (fadeGain < 1.0f)
@@ -102,10 +119,16 @@ public:
     float value() const noexcept
     {
         float v;
+
         if (shape == LfoRandom)
             v = holdValue;
+        else if (shape == LfoSampleHold)
+            v = std::floor (holdValue * 4.0f) * 0.25f;
+        else if (shape == LfoStairs)
+            v = shapeValue (ShapeCustom, phase, 0.8f);
         else
-            v = shapeValue (shape, phase, 0.0f);
+            v = shapeValue (lfoShapeToWobbleShape (shape), phase, 0.0f);
+
         return (v * depth + offset) * fadeGain;
     }
 

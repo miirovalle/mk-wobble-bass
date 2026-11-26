@@ -42,7 +42,8 @@ const char* const kVowels[] = { "A", "E", "I", "O", "U" };
 const char* const kPrePost[] = { "Post", "Pre" };
 const char* const kWobbleShapes[] = { "Sine", "Triangle", "Saw Up", "Saw Down", "Square",
                                       "Pulse", "Ramp", "Random", "S&H", "Custom" };
-const char* const kLfoShapes[] = { "Sine", "Triangle", "Saw Down", "Saw Up", "Square", "Random" };
+const char* const kLfoShapes[] = { "Sine", "Triangle", "Saw Down", "Saw Up", "Square", "Random",
+                                   "Pulse", "Ramp", "S & H", "Stairs" };
 const char* const kPhStages[] = { "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12" };
 const char* const kDistTypes[] = { "Off", "Soft Clip", "Hard Clip", "Tube", "Diode", "Foldback",
                                    "Wavefold", "Bitcrush", "Downsample", "Digital", "Analog",
@@ -55,7 +56,8 @@ const char* const kModSources[] = { "None", "LFO 1", "LFO 2", "LFO 3", "LFO 4", 
 const char* const kModDests[] = { "None", "Pitch", "Cutoff", "Resonance", "WT Pos 1", "WT Pos 2",
                                   "WT Pos 3", "FM Amount", "Pulse Width", "Drive", "Width",
                                   "Sub Level", "Ring Mod", "Formant", "Osc 2 Pitch", "LFO Depth",
-                                  "FX Mix", "Dist Mix", "Delay Mix", "Reverb Mix", "Chorus Mix" };
+                                  "FX Mix", "Dist Mix", "Delay Mix", "Reverb Mix", "Chorus Mix",
+                                  "Osc 1 Level", "Osc 2 Level", "Osc 3 Level" };
 
 static_assert (sizeof (kModSources) / sizeof (kModSources[0]) == (size_t) kModSourceCount, "mod sources");
 static_assert (sizeof (kModDests) / sizeof (kModDests[0]) == (size_t) kModDestCount, "mod dests");
@@ -185,7 +187,7 @@ const char* const* paramChoices (int index, int& count) noexcept
         {
             case 0: count = 2; return kFreeSync;
             case 1: count = kDivisionCount; return syncDivisionNames();
-            case 3: count = 6; return kLfoShapes;
+            case 3: count = 10; return kLfoShapes;
             case 8: count = 2; return kOnOff;
             default: return nullptr;
         }

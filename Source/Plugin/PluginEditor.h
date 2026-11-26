@@ -45,10 +45,12 @@ private:
     juce::TextButton browserButton { "PRESETS" };
     juce::TextButton wobbleTab { "WOBBLE" };
     juce::TextButton gateTab { "GATE" };
+    juce::TextButton lfoTab { "LFO" };
 
     WaveScope scope;
     WobblePage wobblePage;
     GatePage gatePage;
+    LfoPage lfoPage;
 
     std::unique_ptr<PresetBrowser> browser;
     juce::MidiKeyboardComponent keyboard;

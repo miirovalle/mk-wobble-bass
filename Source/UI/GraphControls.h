@@ -75,6 +75,40 @@ private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (RateKnob)
 };
 
+// One LFO: tap the header to change shape, drag the curve for rate (X) and
+// depth (Y), tap SYNC to lock to the host, tap the target to choose what it
+// modulates. The slot also routes itself in the mod matrix, so it is audible
+// without opening anything else.
+class LfoSlot final : public juce::Component, private juce::Timer
+{
+public:
+    LfoSlot (juce::AudioProcessorValueTreeState&, int lfoIndex);
+
+    void paint (juce::Graphics&) override;
+    void mouseDown (const juce::MouseEvent&) override;
+    void mouseDrag (const juce::MouseEvent&) override;
+
+private:
+    void timerCallback() override;
+    void cycleShape();
+    void cycleTarget();
+    void toggleSync();
+    void applyRouting();
+
+    juce::Rectangle<int> headerArea() const;
+    juce::Rectangle<int> curveArea() const;
+    juce::Rectangle<int> syncArea() const;
+    juce::Rectangle<int> targetArea() const;
+
+    juce::AudioProcessorValueTreeState& apvts;
+    int lfo = 0;
+    int target = 0;
+    float displayPhase = 0.0f;
+    bool dragging = false;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (LfoSlot)
+};
+
 // The drawable LFO: drag on the canvas to draw the wobble shape.
 class DrawableLfo final : public juce::Component, private juce::Timer
 {

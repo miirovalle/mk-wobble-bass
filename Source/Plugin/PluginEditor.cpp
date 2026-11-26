@@ -9,6 +9,7 @@ WobbleAudioProcessorEditor::WobbleAudioProcessorEditor (WobbleAudioProcessor& pr
       scope (processorToUse.engine),
       wobblePage (processorToUse.apvts, processorToUse.engine),
       gatePage (processorToUse.apvts, processorToUse.engine),
+      lfoPage (processorToUse.apvts),
       keyboard (processorToUse.keyboardState, juce::MidiKeyboardComponent::horizontalKeyboard)
 {
     setLookAndFeel (&lookAndFeel);
@@ -27,9 +28,9 @@ WobbleAudioProcessorEditor::WobbleAudioProcessorEditor (WobbleAudioProcessor& pr
     browserButton.onClick = [this] { openBrowser(); };
     addAndMakeVisible (browserButton);
 
-    for (int i = 0; i < 2; ++i)
+    for (int i = 0; i < 3; ++i)
     {
-        auto& tab = i == 0 ? wobbleTab : gateTab;
+        auto& tab = i == 0 ? wobbleTab : (i == 1 ? gateTab : lfoTab);
         tab.setClickingTogglesState (true);
         tab.setRadioGroupId (9001);
         tab.setColour (juce::TextButton::buttonOnColourId, theme::accentDeep());
@@ -40,6 +41,7 @@ WobbleAudioProcessorEditor::WobbleAudioProcessorEditor (WobbleAudioProcessor& pr
     addAndMakeVisible (scope);
     addChildComponent (wobblePage);
     addChildComponent (gatePage);
+    addChildComponent (lfoPage);
 
     keyboard.setAvailableRange (0, 60);   // sub-bass to C4: the instrument's range
     keyboard.setWantsKeyboardFocus (true);
@@ -123,24 +125,28 @@ void WobbleAudioProcessorEditor::resized()
     content.removeFromTop (6);
 
     auto tabs = content.removeFromTop (28);
-    wobbleTab.setBounds (tabs.removeFromLeft (104).reduced (0, 1));
+    wobbleTab.setBounds (tabs.removeFromLeft (100).reduced (0, 1));
     tabs.removeFromLeft (6);
-    gateTab.setBounds (tabs.removeFromLeft (104).reduced (0, 1));
-    content.removeFromTop (6);
+    gateTab.setBounds (tabs.removeFromLeft (100).reduced (0, 1));
+    tabs.removeFromLeft (6);
+    lfoTab.setBounds (tabs.removeFromLeft (100).reduced (0, 1));    content.removeFromTop (6);
 
     wobblePage.setBounds (content);
     gatePage.setBounds (content);
+    lfoPage.setBounds (content);
 }
 
 void WobbleAudioProcessorEditor::showTab (int index)
 {
-    currentTab = juce::jlimit (0, 1, index);
+    currentTab = juce::jlimit (0, 2, index);
 
     wobbleTab.setToggleState (currentTab == 0, juce::dontSendNotification);
     gateTab.setToggleState (currentTab == 1, juce::dontSendNotification);
+    lfoTab.setToggleState (currentTab == 2, juce::dontSendNotification);
 
     wobblePage.setVisible (currentTab == 0);
     gatePage.setVisible (currentTab == 1);
+    lfoPage.setVisible (currentTab == 2);
 }
 
 void WobbleAudioProcessorEditor::openBrowser()

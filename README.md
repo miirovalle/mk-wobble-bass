@@ -101,6 +101,18 @@ exactly what modulates the sound. The curve is saved with the plug-in state.
 | **SMOOTH** | Attack/release of the gate: 0 % is a hard chop, 100 % is a soft pump |
 | **GATE ON** | Bypasses the gate while keeping the pattern |
 
+**LFO tab**
+
+| Element | What it does |
+| --- | --- |
+| **LFO 1-3** | Three modulation sources, one per slot. Tap the header to cycle ten shapes: sine, triangle, both saws, square, random, pulse, ramp, sample & hold and stairs |
+| **Curve** | Drag inside it: X sets the rate (tempo division when synced, Hz when free), Y sets the depth |
+| **SYNC / FREE** | Per LFO: host tempo or its own clock |
+| **Target chip** | OSC 1 / OSC 2 / OSC 3 / CUTOFF / RESO / PITCH / WAVE / DRIVE / WIDTH. Each LFO owns one modulation-matrix slot, so LFO 1, 2 and 3 can pulse three different oscillator layers at once - that is how you build a rhythm out of separate synth sounds |
+
+An LFO with depth at zero is inaudible by design (presets stay as authored). Drag
+up inside a slot to bring its layer in.
+
 The gate is an original, self-contained implementation
 ([TranceGate.h](Source/DSP/TranceGate.h)): no Gate12 or other third-party gating
 code is compiled into this plug-in, so nothing here changes the licensing of the

@@ -348,7 +348,8 @@ enum WobbleShape : int
 
 enum LfoShape : int
 {
-    LfoSine = 0, LfoTriangle, LfoSawDown, LfoSawUp, LfoSquare, LfoRandom
+    LfoSine = 0, LfoTriangle, LfoSawDown, LfoSawUp, LfoSquare, LfoRandom,
+    LfoPulse, LfoRamp, LfoSampleHold, LfoStairs
 };
 
 enum FilterType : int
@@ -381,11 +382,12 @@ enum ModDest : int
 {
     DstNone = 0, DstPitch, DstCutoff, DstReso, DstWtPos1, DstWtPos2, DstWtPos3,
     DstFm, DstPw, DstDrive, DstWidth, DstSubLevel, DstRing, DstFormant,
-    DstOsc2Pitch, DstLfoDepth, DstFxMix, DstDistMix, DstDelayMix, DstRevMix, DstChorusMix
+    DstOsc2Pitch, DstLfoDepth, DstFxMix, DstDistMix, DstDelayMix, DstRevMix, DstChorusMix,
+    DstOsc1Level, DstOsc2Level, DstOsc3Level
 };
 
 constexpr int kModSourceCount = 23;
-constexpr int kModDestCount = 21;
+constexpr int kModDestCount = 24;
 
 // Pitch that the engine reaches at full scale; ranges mirror the mod matrix UI.
 constexpr float kCutoffModSemitones = 60.0f;
