@@ -1,0 +1,337 @@
+name: iOS AUv3 IPA
+
+# Builds the iPadOS product and packages it as an installable .ipa:
+#   MK WOBBLE BASS.app            standalone container (the host app)
+#   .../PlugIns/*.appex           the AUv3 instrument embedded inside it
+#
+# Signing is optional. Without secrets the job produces an unsigned IPA, which
+# is what AltStore, Sideloadly and TrollStore expect; they re-sign on install.
+#
+# Signed builds happen automatically once these repository secrets exist:
+#   APPLE_TEAM_ID            e.g. ABCDE12345
+#   APPLE_CERT_P12_BASE64    base64 of an Apple Development or Distribution .p12
+#   APPLE_CERT_PASSWORD      password of that .p12
+#   APPLE_API_KEY_P8_BASE64  base64 of an App Store Connect API key (.p8)
+#   APPLE_API_KEY_ID         10 character key id
+#   APPLE_API_ISSUER_ID      issuer UUID of that key
+# Xcode then provisions both bundle ids itself, including the appex, which uses
+# the container id plus a "AUv3" suffix.
+
+on:
+  workflow_dispatch:
+    inputs:
+      signing:
+        description: "auto = sign when the secrets exist"
+        type: choice
+        options: [auto, unsigned, signed]
+        default: auto
+  push:
+    branches: [main, master]
+    tags: ["v*"]
+    # The artifact costs macOS runner minutes; skip documentation-only pushes.
+    paths-ignore:
+      - "**.md"
+      - "LICENSE"
+      - ".gitignore"
+      - ".gitattributes"
+  pull_request:
+    paths:
+      - "CMakeLists.txt"
+      - "Source/**"
+      - "Assets/**"
+      - ".github/workflows/ios-auv3.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-auv3-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  JUCE_TAG: "9.0.5"
+  BUILD_DIR: build-ios
+
+jobs:
+  ipa:
+    name: AUv3 + IPA
+    runs-on: macos-15
+    timeout-minutes: 90
+    outputs:
+      version: ${{ steps.package.outputs.version }}
+      artifact: ${{ steps.package.outputs.artifact }}
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+          cmake --version | head -n 1
+
+      - name: Cache JUCE
+        uses: actions/cache@v4
+        with:
+          path: external/JUCE
+          key: juce-${{ runner.os }}-${{ env.JUCE_TAG }}
+
+      - name: Fetch JUCE
+        run: |
+          if [ ! -f external/JUCE/CMakeLists.txt ]; then
+            git clone --depth 1 --branch "${JUCE_TAG}" \
+              https://github.com/juce-framework/JUCE external/JUCE
+          fi
+
+      - name: Detect signing material
+        id: signing
+        env:
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          CERT: ${{ secrets.APPLE_CERT_P12_BASE64 }}
+          API_KEY: ${{ secrets.APPLE_API_KEY_P8_BASE64 }}
+          REQUESTED: ${{ inputs.signing || 'auto' }}
+        run: |
+          set -euo pipefail
+
+          if [ "${REQUESTED}" = "unsigned" ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ -n "${TEAM_ID}" ] && [ -n "${CERT}" ] && [ -n "${API_KEY}" ]; then
+            echo "Signing secrets found - building a signed IPA."
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "${REQUESTED}" = "signed" ]; then
+            echo "::error::A signed build was requested but APPLE_TEAM_ID, APPLE_CERT_P12_BASE64 and APPLE_API_KEY_P8_BASE64 are not all configured."
+            exit 1
+          fi
+
+          echo "Signing secrets are not configured - building an unsigned IPA."
+          echo "enabled=false" >> "$GITHUB_OUTPUT"
+
+      - name: Import signing identity
+        if: steps.signing.outputs.enabled == 'true'
+        env:
+          CERT: ${{ secrets.APPLE_CERT_P12_BASE64 }}
+          CERT_PASS: ${{ secrets.APPLE_CERT_PASSWORD }}
+          API_KEY: ${{ secrets.APPLE_API_KEY_P8_BASE64 }}
+        run: |
+          set -euo pipefail
+
+          KEYCHAIN="${RUNNER_TEMP}/signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -hex 16)"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+
+          printf '%s' "${CERT}" | base64 --decode > "${RUNNER_TEMP}/cert.p12"
+          security import "${RUNNER_TEMP}/cert.p12" -k "$KEYCHAIN" -P "${CERT_PASS}" \
+            -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN" \
+            $(security list-keychains -d user | sed 's/"//g')
+
+          printf '%s' "${API_KEY}" | base64 --decode > "${RUNNER_TEMP}/AuthKey.p8"
+          rm -f "${RUNNER_TEMP}/cert.p12"
+
+          security find-identity -v -p codesigning "$KEYCHAIN"
+
+      - name: Configure (Xcode, iOS device)
+        env:
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+
+          common=(
+            -S .
+            -B "$BUILD_DIR"
+            -G Xcode
+            -DCMAKE_SYSTEM_NAME=iOS
+            -DCMAKE_OSX_SYSROOT=iphoneos
+            -DCMAKE_OSX_ARCHITECTURES=arm64
+            -DMK_JUCE_SOURCE_DIR="$GITHUB_WORKSPACE/external/JUCE"
+            -DMK_BUILD_TESTS=OFF
+            -DCMAKE_XCODE_GENERATE_SCHEME=ON
+          )
+
+          # The iPadOS deployment target lives in CMakeLists.txt
+          # (CMAKE_XCODE_ATTRIBUTE_IPHONEOS_DEPLOYMENT_TARGET), so it is not
+          # repeated here.
+          if [ "${{ steps.signing.outputs.enabled }}" = "true" ]; then
+            # The identity is left unset on purpose: automatic signing picks the
+            # one that matches the imported certificate and the provisioning
+            # profile Xcode generates for the device.
+            cmake "${common[@]}" \
+              -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGN_STYLE=Automatic \
+              -DCMAKE_XCODE_ATTRIBUTE_DEVELOPMENT_TEAM="$TEAM_ID"
+          else
+            cmake "${common[@]}" \
+              -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO \
+              -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED=NO \
+              -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY=""
+          fi
+
+      # Building the standalone target also builds the AUv3 target and embeds
+      # the .appex into the container's PlugIns folder.
+      - name: Build container app + AUv3 (unsigned)
+        if: steps.signing.outputs.enabled != 'true'
+        run: |
+          set -euo pipefail
+          cmake --build "$BUILD_DIR" --config Release \
+            --target MKWobbleBass_Standalone --parallel 3
+
+      - name: Build container app + AUv3 (signed)
+        if: steps.signing.outputs.enabled == 'true'
+        env:
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          ISSUER: ${{ secrets.APPLE_API_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          xcodebuild -project "$BUILD_DIR/MKWobbleBass.xcodeproj" \
+            -target MKWobbleBass_Standalone \
+            -configuration Release -sdk iphoneos \
+            ARCHS=arm64 ONLY_ACTIVE_ARCH=NO \
+            DEVELOPMENT_TEAM="$TEAM_ID" CODE_SIGN_STYLE=Automatic \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "${RUNNER_TEMP}/AuthKey.p8" \
+            -authenticationKeyID "$KEY_ID" \
+            -authenticationKeyIssuerID "$ISSUER" \
+            -quiet build
+
+      - name: Package IPA
+        id: package
+        run: |
+          set -euo pipefail
+
+          VERSION="$(grep -m1 -oE 'VERSION [0-9]+\.[0-9]+\.[0-9]+' CMakeLists.txt | cut -d' ' -f2)"
+          [ -n "$VERSION" ] || VERSION="0.0.0"
+
+          if [ "${{ steps.signing.outputs.enabled }}" = "true" ]; then
+            SUFFIX=""
+          else
+            SUFFIX="-unsigned"
+          fi
+          NAME="MK-WOBBLE-BASS-${VERSION}-ios${SUFFIX}"
+
+          APP="$(find "$BUILD_DIR" -type d -name '*.app' -not -path '*/Disabled/*' | head -n 1)"
+          if [ -z "$APP" ]; then
+            echo "::error::The build produced no container .app."
+            find "$BUILD_DIR" -maxdepth 6 \( -name '*.app' -o -name '*.appex' \) -print
+            exit 1
+          fi
+          echo "Container app: $APP"
+
+          APPEX="$(find "$APP" -type d -name '*.appex' | head -n 1)"
+          if [ -z "$APPEX" ] && [ "${{ steps.signing.outputs.enabled }}" != "true" ]; then
+            # JUCE embeds the extension itself; recover gracefully if a future
+            # version leaves it beside the app. Unsigned only - copying after
+            # signing would invalidate the signature.
+            SIDE_APPEX="$(find "$BUILD_DIR" -type d -name '*.appex' | head -n 1)"
+            if [ -n "$SIDE_APPEX" ]; then
+              echo "Extension was not embedded; copying $(basename "$SIDE_APPEX") into PlugIns."
+              mkdir -p "$APP/PlugIns"
+              cp -R "$SIDE_APPEX" "$APP/PlugIns/"
+              APPEX="$APP/PlugIns/$(basename "$SIDE_APPEX")"
+            fi
+          fi
+
+          if [ -z "$APPEX" ]; then
+            echo "::error::The AUv3 .appex is missing from the container app."
+            exit 1
+          fi
+          echo "AUv3 extension: $APPEX"
+
+          EXE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Info.plist")"
+          lipo -info "$APP/$EXE"
+
+          APP_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist")"
+          APPEX_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APPEX/Info.plist")"
+          POINT="$(/usr/libexec/PlistBuddy \
+            -c 'Print :NSExtension:NSExtensionPointIdentifier' "$APPEX/Info.plist")"
+          echo "container id: $APP_ID"
+          echo "extension id: $APPEX_ID ($POINT)"
+
+          if [ "$APP_ID" = "$APPEX_ID" ]; then
+            echo "::error::The container and the extension share a bundle id."
+            exit 1
+          fi
+          if [ "$POINT" != "com.apple.AudioUnit-UI" ]; then
+            echo "::error::Unexpected extension point '$POINT'; iPadOS will not load this as an AUv3."
+            exit 1
+          fi
+
+          if [ "${{ steps.signing.outputs.enabled }}" = "true" ]; then
+            codesign --verify --deep --strict "$APP"
+            codesign -dv --verbose=2 "$APP" 2>&1 | grep -E 'Identifier|TeamIdentifier|Authority' || true
+          fi
+
+          rm -rf Payload dist
+          mkdir -p Payload dist
+          cp -R "$APP" Payload/
+          xattr -cr Payload || true
+          zip -qry -X "dist/${NAME}.ipa" Payload
+          ditto -c -k --keepParent "$APPEX" "dist/${NAME}-AUv3.appex.zip"
+          rm -rf Payload
+          shasum -a 256 dist/* > dist/SHA256SUMS
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "artifact=$NAME" >> "$GITHUB_OUTPUT"
+          ls -lh dist
+
+      - name: Summary
+        run: |
+          {
+            echo "## MK WOBBLE BASS - iPadOS AUv3"
+            echo ""
+            echo "- Commit: \`${GITHUB_SHA}\`"
+            echo "- Version: ${{ steps.package.outputs.version }}"
+            echo "- Signing: $( [ "${{ steps.signing.outputs.enabled }}" = "true" ] && echo "signed" || echo "unsigned" )"
+            echo ""
+            echo "### Install"
+            echo "1. Download the \`MK-WOBBLE-BASS-*-ios\` artifact below."
+            echo "2. Install with AltStore, Sideloadly or Xcode (Window > Devices and Simulators)."
+            echo "3. Launch **MK WOBBLE BASS** once so iPadOS registers the audio unit."
+            echo "4. It appears as an instrument (\`aumu\`) in AUM, Cubasis, Auria and Drambo."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload IPA and AUv3
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.package.outputs.artifact }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 90
+
+  release:
+    name: Attach IPA to release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: ipa
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download IPA
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.ipa.outputs.artifact }}
+          path: dist
+
+      - name: Upload to GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          gh release view "$TAG" >/dev/null 2>&1 \
+            || gh release create "$TAG" --title "$TAG" --notes "MK WOBBLE BASS $TAG"
+          gh release upload "$TAG" dist/* --clobber

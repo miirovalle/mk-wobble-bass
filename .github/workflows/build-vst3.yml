@@ -1,0 +1,217 @@
+name: VST3 and AU builds
+
+# Builds the desktop products the README promises:
+#   Windows x64  -> VST3 + Standalone
+#   macOS        -> universal (arm64 + x86_64) VST3 + Audio Unit
+# and runs the portable DSP tests on Linux. No certificates are needed: JUCE
+# ad-hoc signs the macOS bundles, which is enough for a DAW on the machine that
+# downloads them.
+
+on:
+  push:
+    branches: [main, master]
+    tags: ["v*"]
+    paths-ignore:
+      - "**.md"
+      - "LICENSE"
+      - ".gitignore"
+      - ".gitattributes"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vst3-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  JUCE_TAG: "9.0.5"
+
+jobs:
+  # The engine has no framework dependencies, so the cheapest runner proves it
+  # still compiles and behaves before the slower plug-in builds start.
+  core-tests:
+    name: DSP core tests (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Configure (core only)
+        run: >-
+          cmake -S . -B build-core -DCMAKE_BUILD_TYPE=Release
+          -DMK_BUILD_PLUGIN=OFF
+      - name: Build
+        run: cmake --build build-core --config Release --parallel
+      - name: Test
+        run: ctest --test-dir build-core -C Release --output-on-failure
+
+  windows-vst3:
+    name: VST3 + Standalone (Windows x64)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Cache JUCE
+        uses: actions/cache@v4
+        with:
+          path: external/JUCE
+          key: juce-${{ runner.os }}-${{ env.JUCE_TAG }}
+
+      - name: Fetch JUCE
+        shell: bash
+        run: |
+          if [ ! -f external/JUCE/CMakeLists.txt ]; then
+            git clone --depth 1 --branch "${JUCE_TAG}" \
+              https://github.com/juce-framework/JUCE external/JUCE
+          fi
+
+      - name: Configure
+        run: >-
+          cmake -S . -B build -A x64
+          -DMK_JUCE_SOURCE_DIR="${{ github.workspace }}/external/JUCE"
+
+      - name: Build
+        run: >-
+          cmake --build build --config Release --parallel
+          --target MKWobbleBass_VST3 MKWobbleBass_Standalone mk_wobble_tests
+
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $version = "0.0.0"
+          if ((Get-Content CMakeLists.txt -Raw) -match 'VERSION (\d+\.\d+\.\d+)') {
+            $version = $Matches[1]
+          }
+          $artefacts = Join-Path $PWD "build/MKWobbleBass_artefacts/Release"
+          New-Item -ItemType Directory -Force dist | Out-Null
+
+          $vst3 = Join-Path $artefacts "VST3/MK WOBBLE BASS.vst3"
+          $exe  = Join-Path $artefacts "Standalone/MK WOBBLE BASS.exe"
+          if (-not (Test-Path $vst3)) { throw "VST3 bundle was not produced: $vst3" }
+          if (-not (Test-Path $exe))  { throw "Standalone executable was not produced: $exe" }
+
+          # The .vst3 is a folder; archive it so the bundle layout survives.
+          Compress-Archive -Path $vst3 `
+            -DestinationPath "dist/MK-WOBBLE-BASS-$version-VST3-Windows-x64.zip"
+          Compress-Archive -Path $exe `
+            -DestinationPath "dist/MK-WOBBLE-BASS-$version-Standalone-Windows-x64.zip"
+
+          Get-ChildItem dist | Select-Object Name, Length
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64
+          path: dist/*.zip
+          if-no-files-found: error
+          retention-days: 90
+
+  macos-vst3:
+    name: VST3 + AU (macOS universal)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          cmake --version | head -n 1
+
+      - name: Cache JUCE
+        uses: actions/cache@v4
+        with:
+          path: external/JUCE
+          key: juce-${{ runner.os }}-${{ env.JUCE_TAG }}
+
+      - name: Fetch JUCE
+        run: |
+          if [ ! -f external/JUCE/CMakeLists.txt ]; then
+            git clone --depth 1 --branch "${JUCE_TAG}" \
+              https://github.com/juce-framework/JUCE external/JUCE
+          fi
+
+      - name: Configure
+        run: >-
+          cmake -S . -B build -G Xcode
+          -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+          -DMK_JUCE_SOURCE_DIR="$GITHUB_WORKSPACE/external/JUCE"
+          -DMK_BUILD_TESTS=OFF
+
+      - name: Build
+        run: >-
+          cmake --build build --config Release --parallel 3
+          --target MKWobbleBass_VST3 MKWobbleBass_AU
+
+      - name: Package
+        run: |
+          set -euo pipefail
+
+          VERSION="$(grep -m1 -oE 'VERSION [0-9]+\.[0-9]+\.[0-9]+' CMakeLists.txt | cut -d' ' -f2)"
+          [ -n "$VERSION" ] || VERSION="0.0.0"
+
+          ARTEFACTS="build/MKWobbleBass_artefacts/Release"
+          VST3="$ARTEFACTS/VST3/MK WOBBLE BASS.vst3"
+          AU="$ARTEFACTS/AU/MK WOBBLE BASS.component"
+
+          [ -d "$VST3" ] || { echo "::error::VST3 bundle was not produced"; exit 1; }
+          [ -d "$AU" ] || { echo "::error::Audio Unit bundle was not produced"; exit 1; }
+
+          for bundle in "$VST3" "$AU"; do
+            echo "$bundle"
+            EXE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$bundle/Contents/Info.plist")"
+            lipo -info "$bundle/Contents/MacOS/$EXE"
+          done
+
+          STAGING="staging/MK-WOBBLE-BASS-${VERSION}-macOS"
+          rm -rf staging dist
+          mkdir -p "$STAGING/VST3" "$STAGING/Audio Unit" dist
+          ditto "$VST3" "$STAGING/VST3/$(basename "$VST3")"
+          ditto "$AU" "$STAGING/Audio Unit/$(basename "$AU")"
+          ditto -c -k --sequesterRsrc --keepParent "$STAGING" \
+            "dist/MK-WOBBLE-BASS-${VERSION}-macOS-universal.zip"
+          shasum -a 256 dist/* > dist/SHA256SUMS
+          ls -lh dist
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-universal
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 90
+
+  release:
+    name: Attach builds to release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [windows-vst3, macos-vst3]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Upload to GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          gh release view "$TAG" >/dev/null 2>&1 \
+            || gh release create "$TAG" --title "$TAG" --notes "MK WOBBLE BASS $TAG"
+          gh release upload "$TAG" dist/* --clobber
