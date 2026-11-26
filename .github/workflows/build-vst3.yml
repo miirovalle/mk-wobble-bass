@@ -36,7 +36,7 @@ jobs:
     name: DSP core tests (Linux)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - name: Configure (core only)
@@ -52,12 +52,12 @@ jobs:
     name: VST3 + Standalone (Windows x64)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
       - name: Cache JUCE
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: external/JUCE
           key: juce-${{ runner.os }}-${{ env.JUCE_TAG }}
@@ -108,7 +108,7 @@ jobs:
           Get-ChildItem dist | Select-Object Name, Length
 
       - name: Upload
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows-x64
           path: dist/*.zip
@@ -119,7 +119,7 @@ jobs:
     name: VST3 + AU (macOS universal)
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -129,7 +129,7 @@ jobs:
           cmake --version | head -n 1
 
       - name: Cache JUCE
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: external/JUCE
           key: juce-${{ runner.os }}-${{ env.JUCE_TAG }}
@@ -184,7 +184,7 @@ jobs:
           ls -lh dist
 
       - name: Upload
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: macos-universal
           path: dist/*
@@ -200,7 +200,7 @@ jobs:
       contents: write
     steps:
       - name: Download artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true

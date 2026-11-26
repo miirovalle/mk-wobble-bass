@@ -63,7 +63,7 @@ jobs:
 
     steps:
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -74,7 +74,7 @@ jobs:
           cmake --version | head -n 1
 
       - name: Cache JUCE
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: external/JUCE
           key: juce-${{ runner.os }}-${{ env.JUCE_TAG }}
@@ -304,7 +304,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload IPA and AUv3
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.package.outputs.artifact }}
           path: dist/*
@@ -320,7 +320,7 @@ jobs:
       contents: write
     steps:
       - name: Download IPA
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: ${{ needs.ipa.outputs.artifact }}
           path: dist
