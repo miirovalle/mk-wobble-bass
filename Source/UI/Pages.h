@@ -3,6 +3,7 @@
 // The two tabs: WOBBLE (drawable LFO + three knobs) and GATE (trance gate).
 
 #include "DSP/Engine.h"
+#include "DSP/GatePresets.h"
 #include "UI/GatePattern.h"
 #include "UI/GraphControls.h"
 #include "UI/Theme.h"
@@ -20,19 +21,12 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
 
-    // Keeps the SYNC chip in step with host automation of the wobble mode.
-    void refresh();
-
 private:
     DrawableLfo canvas;
-    ParamKnob rate;
+    RateKnob rate;
     ParamKnob depth;
     TypeKnob type;
-    juce::TextButton syncButton { "SYNC" };
     juce::TextButton sineButton { "SINE" };
-    juce::TextButton triButton { "TRI" };
-    juce::TextButton sawButton { "SAW" };
-    juce::TextButton squareButton { "SQUARE" };
     juce::TextButton clearButton { "CLEAR" };
 
     juce::AudioProcessorValueTreeState& apvts;
@@ -51,13 +45,20 @@ public:
     void refresh();
 
 private:
+    void applyPreset (int index);
+
     GatePattern pattern;
     ParamKnob rate;
     ParamKnob depth;
     ParamKnob smooth;
     juce::TextButton gateButton { "GATE ON" };
+    juce::TextButton presetPrev { "<" };
+    juce::TextButton presetNext { ">" };
+    juce::Label presetName;
 
     juce::AudioProcessorValueTreeState& apvts;
+    Engine& engine;
+    int presetIndex = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (GatePage)
 };

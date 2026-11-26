@@ -124,7 +124,7 @@ int main (int argc, char** argv)
 
     // Trance gate: every other step closed must attenuate the held note.
     {
-        processor.engine.tranceGate().setPattern (0x5555);
+        processor.engine.tranceGate().setPattern (0x5555555555555555ull);
         processor.engine.allNotesOff (true);
         midi.addEvent (juce::MidiMessage::noteOn (1, 33, 1.0f), 0);
 
@@ -140,7 +140,7 @@ int main (int argc, char** argv)
         }
 
         check (quietest < 0.35, "trance gate closes on disabled steps");
-        processor.engine.tranceGate().setPattern (0x5555);
+        processor.engine.tranceGate().setPattern (0x5555555555555555ull);
     }
 
     // State round-trip.

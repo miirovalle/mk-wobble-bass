@@ -1,8 +1,8 @@
 #pragma once
 
 // Two tabs, one tool each:
-//   WOBBLE - draw the wobble shape, then shape it with three knobs
-//   GATE   - a sixteen-step trance gate
+//   WOBBLE - draw the wobble shape, then RATE / DEPTH / TYPE
+//   GATE   - a 64-step trance gate with 100 rhythms
 // The output waveform sits under the header on both tabs.
 
 #include "Plugin/PluginProcessor.h"
@@ -31,7 +31,6 @@ public:
 
 private:
     void timerCallback() override;
-    void updateHeader();
     void showTab (int index);
     void openBrowser();
     void closeBrowser();
@@ -43,13 +42,9 @@ private:
 
     juce::Label titleLabel;
     juce::Label presetLabel;
-    juce::Label infoLabel;
-    juce::TextButton previousButton { "<" };
-    juce::TextButton nextButton { ">" };
     juce::TextButton browserButton { "PRESETS" };
     juce::TextButton wobbleTab { "WOBBLE" };
     juce::TextButton gateTab { "GATE" };
-    LevelMeter meter;
 
     WaveScope scope;
     WobblePage wobblePage;

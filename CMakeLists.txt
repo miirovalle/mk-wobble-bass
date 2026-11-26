@@ -35,6 +35,7 @@ add_library(mkwobble_core STATIC
     Source/DSP/Effects.cpp
     Source/DSP/Engine.cpp
     Source/DSP/Presets.cpp
+    Source/DSP/GatePresets.cpp
 )
 target_include_directories(mkwobble_core PUBLIC Source)
 target_compile_definitions(mkwobble_core PUBLIC MK_CORE=1)

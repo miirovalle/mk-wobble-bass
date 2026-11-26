@@ -113,7 +113,7 @@ using U = Unit;
     X(flt2Reso,     Filt, 0.0f,    1.0f,     0.1f,   Pct)                                          \
     X(fltFormant,   Filt, 0.0f,    4.0f,     0.0f,   Raw)   /* A E I O U */                        \
                                                                                                    \
-    X(wobMode,      Wob,  0.0f,    1.0f,     0.0f,   Raw)   /* Sync / Free */                      \
+    X(wobMode,      Wob,  0.0f,    1.0f,     1.0f,   Raw)   /* Sync / Free */                      \
     X(wobDiv,       Wob,  0.0f,    15.0f,    2.0f,   Raw)                                          \
     X(wobRate,      Wob,  0.02f,   32.0f,    2.0f,   Hz)                                           \
     X(wobDepth,     Wob,  0.0f,    1.0f,     0.55f,  Pct)                                          \

@@ -25,8 +25,16 @@ int GatePattern::stepAt (juce::Point<int> point) const
     if (! grid.contains (point))
         return -1;
 
-    const float width = (float) grid.getWidth() / (float) TranceGate::kSteps;
-    return juce::jlimit (0, TranceGate::kSteps - 1, (int) ((float) (point.x - grid.getX()) / width));
+    constexpr int columns = 16;
+    constexpr int rows = TranceGate::kSteps / columns;
+
+    const float cellWidth = (float) grid.getWidth() / (float) columns;
+    const float cellHeight = (float) grid.getHeight() / (float) rows;
+
+    const int column = juce::jlimit (0, columns - 1, (int) ((float) (point.x - grid.getX()) / cellWidth));
+    const int row = juce::jlimit (0, rows - 1, (int) ((float) (point.y - grid.getY()) / cellHeight));
+
+    return row * columns + column;
 }
 
 void GatePattern::timerCallback()
@@ -64,15 +72,22 @@ void GatePattern::paint (juce::Graphics& g)
 
     const auto grid = gridArea();
     const auto& gate = engine.tranceGate();
-    const float cellWidth = (float) grid.getWidth() / (float) TranceGate::kSteps;
+    constexpr int columns = 16;
+    constexpr int rows = TranceGate::kSteps / columns;
+
+    const float cellWidth = (float) grid.getWidth() / (float) columns;
+    const float cellHeight = (float) grid.getHeight() / (float) rows;
     const int playhead = gate.currentStep();
 
     for (int step = 0; step < TranceGate::kSteps; ++step)
     {
-        auto cell = juce::Rectangle<float> (grid.getX() + (float) step * cellWidth + 2.0f,
-                                            (float) grid.getY(),
+        const int column = step % columns;
+        const int row = step / columns;
+
+        auto cell = juce::Rectangle<float> (grid.getX() + (float) column * cellWidth + 2.0f,
+                                            grid.getY() + (float) row * cellHeight + 2.0f,
                                             juce::jmax (4.0f, cellWidth - 4.0f),
-                                            (float) grid.getHeight());
+                                            juce::jmax (4.0f, cellHeight - 4.0f));
 
         const bool on = gate.stepIsOn (step);
 
@@ -83,7 +98,7 @@ void GatePattern::paint (juce::Graphics& g)
         g.drawRoundedRectangle (cell, 6.0f, 1.0f);
 
         g.setColour (on ? theme::text() : theme::textDim());
-        g.setFont (theme::labelFont (11.0f));
+        g.setFont (theme::labelFont (10.0f));
         g.drawFittedText (juce::String (step + 1), cell.toNearestInt(),
                           juce::Justification::centred, 1);
 

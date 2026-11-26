@@ -544,7 +544,8 @@ void WobbleAudioProcessor::getStateInformation (juce::MemoryBlock& destination)
         points.add (juce::String (engine.wobblePoint (i), 4));
 
     state.setProperty ("wobbleCurve", points.joinIntoString (","), nullptr);
-    state.setProperty ("gatePattern", (int) engine.tranceGate().patternMask(), nullptr);
+    state.setProperty ("gatePattern",
+                       juce::String::toHexString ((juce::int64) engine.tranceGate().patternMask()), nullptr);
 
     if (auto xml = state.createXml())
         copyXmlToBinary (*xml, destination);
@@ -577,7 +578,8 @@ void WobbleAudioProcessor::setStateInformation (const void* data, int size)
     for (int i = 0; i < Engine::kWobblePoints && i < curvePoints.size(); ++i)
         engine.setWobblePoint (i, curvePoints[i].getFloatValue());
 
-    engine.tranceGate().setPattern ((uint16_t) xml->getIntAttribute ("gatePattern", 0x5555));
+    engine.tranceGate().setPattern ((uint64_t) xml->getStringAttribute ("gatePattern", "5555555555555555")
+                                        .getHexValue64());
 
     engine.params().requestSnap();
 }

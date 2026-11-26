@@ -16,7 +16,7 @@ namespace mk
 class TranceGate
 {
 public:
-    static constexpr int kSteps = 16;
+    static constexpr int kSteps = 64;
 
     void prepare (double sampleRate) noexcept
     {
@@ -37,16 +37,16 @@ public:
 
     //--------------------------------------------------------------------------
     // Pattern (message thread writes, audio thread reads), one bit per step.
-    uint16_t patternMask() const noexcept { return pattern.load (std::memory_order_relaxed); }
+    uint64_t patternMask() const noexcept { return pattern.load (std::memory_order_relaxed); }
 
-    void setPattern (uint16_t mask) noexcept
+    void setPattern (uint64_t mask) noexcept
     {
-        pattern.store ((uint16_t) (mask & ((1u << kSteps) - 1u)), std::memory_order_relaxed);
+        pattern.store (mask, std::memory_order_relaxed);
     }
 
     bool stepIsOn (int index) const noexcept
     {
-        return (patternMask() & (1u << clampValue (index, 0, kSteps - 1))) != 0;
+        return (patternMask() & (1ull << clampValue (index, 0, kSteps - 1))) != 0;
     }
 
     void setStep (int index, bool on) noexcept
@@ -54,12 +54,12 @@ public:
         if (index < 0 || index >= kSteps)
             return;
 
-        const uint16_t bit = (uint16_t) (1u << index);
-        uint16_t current = pattern.load (std::memory_order_relaxed);
+        const uint64_t bit = 1ull << index;
+        uint64_t current = pattern.load (std::memory_order_relaxed);
 
         for (;;)
         {
-            const uint16_t next = on ? (uint16_t) (current | bit) : (uint16_t) (current & ~bit);
+            const uint64_t next = on ? (current | bit) : (current & ~bit);
 
             if (next == current || pattern.compare_exchange_weak (current, next,
                                                                   std::memory_order_relaxed))
@@ -118,7 +118,7 @@ public:
             {
                 phase -= stepSamples;
                 step = (step + 1) % kSteps;
-                gateOpen = (pattern.load (std::memory_order_relaxed) & (1u << step)) != 0;
+                gateOpen = (pattern.load (std::memory_order_relaxed) & (1ull << step)) != 0;
                 stepDisplay.store (step, std::memory_order_relaxed);
             }
 
@@ -136,7 +136,7 @@ public:
     }
 
 private:
-    std::atomic<uint16_t> pattern { 0x5555 };   // classic every-other-step gate
+    std::atomic<uint64_t> pattern { 0x5555555555555555ull };   // every other step
     std::atomic<int> stepDisplay { 0 };
     std::atomic<float> envelopeDisplay { 1.0f };
 

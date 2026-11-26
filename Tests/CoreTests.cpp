@@ -1,5 +1,6 @@
 #include "DSP/Engine.h"
 #include "DSP/Presets.h"
+#include "DSP/GatePresets.h"
 #include "DSP/TranceGate.h"
 
 #include <cmath>
@@ -291,7 +292,7 @@ void testTranceGate()
 {
     mk::TranceGate gate;
     gate.prepare (48000.0);
-    gate.setPattern (0x5555);            // odd steps open
+    gate.setPattern (0x5555555555555555ull);            // odd steps open
     gate.setParameters (true, 1, 1.0f, 0.0f, 120.0);   // 1/16, full depth, no smoothing
 
     // 120 BPM, 1/16 -> 6000 samples per step at 48 kHz.
@@ -318,11 +319,43 @@ void testTranceGate()
     // Depth 0 must not attenuate anything even on closed steps.
     mk::TranceGate gentle;
     gentle.prepare (48000.0);
-    gentle.setPattern (0x0000);          // every step closed
+    gentle.setPattern (0ull);          // every step closed
     gentle.setParameters (true, 1, 0.0f, 0.0f, 120.0);
     std::vector<float> gentleL (4800, 1.0f), gentleR (4800, 1.0f);
     gentle.process (gentleL.data(), gentleR.data(), (int) gentleL.size());
     check (gentleL[4799] > 0.999f, "depth zero leaves the signal alone");
+}
+
+void testGatePresets()
+{
+    check (mk::gatePresetCount() == 100, "gate library ships 100 presets");
+
+    for (int i = 0; i < mk::gatePresetCount(); ++i)
+    {
+        const auto& preset = mk::gatePreset (i);
+        check (preset.name != nullptr && preset.name[0] != 0, "gate preset has a name");
+        check (preset.division >= 0 && preset.division <= 3, "gate preset rate is valid");
+        check (preset.depth >= 0.0f && preset.depth <= 1.0f, "gate preset depth is valid");
+        check (preset.smooth >= 0.0f && preset.smooth <= 1.0f, "gate preset smoothing is valid");
+
+        int length = 0;
+        bool valid = true;
+
+        for (const char* c = preset.bits; *c != 0; ++c, ++length)
+            if (*c != '0' && *c != '1')
+                valid = false;
+
+        check (length == 16 && valid, "gate preset pattern is 16 bits");
+        check (mk::gatePresetMask (i) != 0, "gate preset has at least one open step");
+    }
+
+    // The first bit of the string must be step 1 of the grid.
+    mk::TranceGate gate;
+    gate.prepare (48000.0);
+    gate.setPattern (mk::gatePresetMask (0));      // 1010101010101010
+
+    check (gate.stepIsOn (0) && ! gate.stepIsOn (1) && gate.stepIsOn (2),
+           "gate preset bit order matches the grid");
 }
 
 void testIdleSilenceForEveryPreset()
@@ -378,6 +411,7 @@ int main()
     testMatrixAndMacros();
     testPresets();
     testTranceGate();
+    testGatePresets();
     testIdleSilenceForEveryPreset();
     testReleaseTailEnds();
     reportMemory();

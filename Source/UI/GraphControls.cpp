@@ -18,6 +18,12 @@ void writePlain (juce::AudioProcessorValueTreeState& state, int index, float pla
         parameter->setValueNotifyingHost (parameter->convertTo0to1 (plain));
 }
 
+float readPlain (juce::AudioProcessorValueTreeState& state, int index)
+{
+    auto* parameter = rangedParam (state, index);
+    return parameter != nullptr ? parameter->convertFrom0to1 (parameter->getValue()) : 0.0f;
+}
+
 } // namespace
 
 //==============================================================================
@@ -139,6 +145,64 @@ void TypeKnob::paint (juce::Graphics& g)
 }
 
 void TypeKnob::resized()
+{
+    slider.setBounds (getLocalBounds().reduced (0, 20));
+}
+
+//==============================================================================
+RateKnob::RateKnob (juce::AudioProcessorValueTreeState& state) : apvts (state)
+{
+    slider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
+    slider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+    slider.setRotaryParameters (juce::MathConstants<float>::pi * 1.25f,
+                                juce::MathConstants<float>::pi * 2.75f, true);
+    slider.setRange (0.02, 32.0, 0.0);
+    slider.setSkewFactorFromMidPoint (2.0);
+    slider.setValue ((double) readPlain (apvts, (int) P::wobRate), juce::dontSendNotification);
+    addAndMakeVisible (slider);
+
+    if (auto* parameter = rangedParam (apvts, (int) P::wobRate))
+    {
+        attachment = std::make_unique<juce::ParameterAttachment> (
+            *parameter, [this] (float newValue)
+            {
+                value = newValue;
+
+                if (! slider.isMouseButtonDown())
+                    slider.setValue ((double) newValue, juce::dontSendNotification);
+
+                repaint();
+            });
+
+        attachment->sendInitialUpdate();
+    }
+
+    slider.onValueChange = [this]
+    {
+        if (attachment != nullptr)
+            attachment->setValueAsCompleteGesture ((float) slider.getValue());
+
+        // Rate is meaningless in tempo-sync mode, so choosing a rate frees it.
+        writePlain (apvts, (int) P::wobMode, 1.0f);
+        repaint();
+    };
+}
+
+void RateKnob::paint (juce::Graphics& g)
+{
+    auto bounds = getLocalBounds();
+
+    g.setColour (theme::textDim());
+    g.setFont (theme::labelFont (12.0f));
+    g.drawFittedText ("RATE", bounds.removeFromTop (18), juce::Justification::centred, 1);
+
+    g.setColour (theme::text());
+    g.setFont (theme::valueFont (13.0f));
+    g.drawFittedText (juce::String (value, value >= 10.0f ? 1 : 2) + " Hz",
+                      bounds.removeFromBottom (20), juce::Justification::centred, 1);
+}
+
+void RateKnob::resized()
 {
     slider.setBounds (getLocalBounds().reduced (0, 20));
 }

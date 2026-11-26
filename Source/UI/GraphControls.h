@@ -55,6 +55,26 @@ private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (TypeKnob)
 };
 
+// Rotary that sets the wobble rate in Hz and always leaves the engine in free
+// mode, so the knob can never appear dead (the engine's other option is host
+// tempo sync, which the rate knob cannot express).
+class RateKnob final : public juce::Component
+{
+public:
+    explicit RateKnob (juce::AudioProcessorValueTreeState& state);
+
+    void paint (juce::Graphics&) override;
+    void resized() override;
+
+private:
+    juce::AudioProcessorValueTreeState& apvts;
+    juce::Slider slider;
+    std::unique_ptr<juce::ParameterAttachment> attachment;
+    float value = 2.0f;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (RateKnob)
+};
+
 // The drawable LFO: drag on the canvas to draw the wobble shape.
 class DrawableLfo final : public juce::Component, private juce::Timer
 {

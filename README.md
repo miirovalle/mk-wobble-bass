@@ -82,9 +82,8 @@ header on both tabs.
 | Element | What it does |
 | --- | --- |
 | **DRAW THE WOBBLE** | Draw the wobble shape with one finger; the playhead shows where the wobble is now |
-| **SINE / TRI / SAW / SQUARE / CLEAR** | Replaces the drawing with a classic shape (or a flat line) in one tap |
-| **SYNC** | Locks the wobble to the host tempo instead of the free-running rate |
-| **RATE** | Wobble speed: tempo division when synced, Hz when free |
+| **SINE / CLEAR** | Puts a sine back on the canvas, or flattens it |
+| **RATE** | Wobble speed in Hz. Turning it always switches the wobble to its own clock, so the knob is never dead |
 | **DEPTH** | How far the wobble swings |
 | **WOBBLE TYPE** | What the wobble moves: FILTER, RESO, PITCH, WAVE, DIRT, WIDTH, FORMANT, FM |
 
@@ -95,7 +94,8 @@ exactly what modulates the sound. The curve is saved with the plug-in state.
 
 | Element | What it does |
 | --- | --- |
-| **TRANCE GATE** | Sixteen steps: tap or drag to open and close them. The outline follows the playhead and the bar at the bottom shows the live gain |
+| **TRANCE GATE** | 64 steps in four rows of sixteen: tap or drag to open and close them. The outline follows the playhead and the bar at the bottom shows the live gain |
+| **< 1/100 name >** | Steps through the 100 built-in rhythms (`Source/DSP/GatePresets.cpp`); each one also sets its rate, depth and smoothing |
 | **RATE** | 1/32, 1/16, 1/8 or 1/4, always locked to the host tempo |
 | **DEPTH** | How far closed steps go: 0 % leaves the signal untouched, 100 % is full silence |
 | **SMOOTH** | Attack/release of the gate: 0 % is a hard chop, 100 % is a soft pump |
