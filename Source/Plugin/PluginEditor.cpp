@@ -2,45 +2,41 @@
 
 namespace mk
 {
-namespace
-{
-
-const char* pageName (int index)
-{
-    static const char* const names[] = { "MAIN", "VOICE", "OSC", "FILTER", "WOBBLE",
-                                         "MOD", "DIST", "FX", "MATRIX" };
-    return names[juce::jlimit (0, 8, index)];
-}
-
-} // namespace
 
 WobbleAudioProcessorEditor::WobbleAudioProcessorEditor (WobbleAudioProcessor& processorToUse)
     : AudioProcessorEditor (processorToUse),
       processor (processorToUse),
       meter (processorToUse.engine),
+      scope (processorToUse.engine),
+      pianoRoll (processorToUse.sequencer),
+      wobblePanel (processorToUse.apvts, processorToUse.engine),
+      wobbleTargets (processorToUse.apvts),
+      filterPad (processorToUse.apvts),
+      growlPad (processorToUse.apvts),
       keyboard (processorToUse.keyboardState, juce::MidiKeyboardComponent::horizontalKeyboard)
 {
     setLookAndFeel (&lookAndFeel);
 
     titleLabel.setText ("MK / WOBBLE BASS", juce::dontSendNotification);
-    titleLabel.setFont (theme::labelFont (20.0f));
+    titleLabel.setFont (theme::labelFont (19.0f));
     titleLabel.setColour (juce::Label::textColourId, theme::text());
     addAndMakeVisible (titleLabel);
 
-    presetLabel.setFont (theme::valueFont (15.0f));
+    presetLabel.setFont (theme::valueFont (14.0f));
     presetLabel.setColour (juce::Label::textColourId, theme::accentBright());
     presetLabel.setJustificationType (juce::Justification::centred);
     addAndMakeVisible (presetLabel);
 
-    infoLabel.setFont (theme::valueFont (11.5f));
+    infoLabel.setFont (theme::valueFont (10.5f));
     infoLabel.setColour (juce::Label::textColourId, theme::textDim());
     infoLabel.setJustificationType (juce::Justification::centredRight);
     addAndMakeVisible (infoLabel);
 
-    for (auto* button : { &previousButton, &nextButton, &browserButton })
+    for (auto* button : { &previousButton, &nextButton, &browserButton, &advancedButton })
     {
         addAndMakeVisible (*button);
         button->setColour (juce::TextButton::textColourOffId, theme::text());
+        button->setColour (juce::TextButton::textColourOnId, theme::text());
     }
 
     previousButton.onClick = [this]
@@ -48,138 +44,38 @@ WobbleAudioProcessorEditor::WobbleAudioProcessorEditor (WobbleAudioProcessor& pr
         processor.presets.loadNext (-1);
         updateHeader();
     };
+
     nextButton.onClick = [this]
     {
         processor.presets.loadNext (1);
         updateHeader();
     };
+
     browserButton.onClick = [this] { openBrowser(); };
 
+    advancedButton.setClickingTogglesState (true);
+    advancedButton.onClick = [this] { showAdvanced (! advancedVisible); };
+
     addAndMakeVisible (meter);
+    addAndMakeVisible (scope);
+    addAndMakeVisible (pianoRoll);
+    addAndMakeVisible (wobblePanel);
+    addAndMakeVisible (wobbleTargets);
+    addAndMakeVisible (filterPad);
+    addAndMakeVisible (growlPad);
 
-    for (int i = 0; i < (int) Page::kCount; ++i)
+    for (int i = 0; i < 3; ++i)
     {
-        auto button = std::make_unique<juce::TextButton> (pageName (i));
-        button->setClickingTogglesState (true);
-        button->setRadioGroupId (4711);
-        button->onClick = [this, i] { showPage ((Page) i); };
-        addAndMakeVisible (*button);
-        pageButtons[(size_t) i] = std::move (button);
+        lfoSlots[(size_t) i] = std::make_unique<LfoSlot> (processor.apvts, i);
+        addAndMakeVisible (*lfoSlots[(size_t) i]);
     }
 
-    const auto learn = [this] (int paramIndex) { processor.startMidiLearn (paramIndex); };
-
-    pageComponents[(size_t) Page::Main]
-        = std::make_unique<MainPage> (processor.apvts, processor.engine, learn);
-    pageComponents[(size_t) Page::Voice]
-        = std::make_unique<ParamGridPage> (processor.apvts, "Voice, Glide, Quality",
-                                           [this]
-                                           {
-                                               std::vector<int> list;
-                                               for (int i = 0; i < kParamCount; ++i)
-                                                   if (paramMeta (i).group == Group::Glob
-                                                       || paramMeta (i).group == Group::Misc)
-                                                       list.push_back (i);
-                                               return list;
-                                           }(),
-                                           learn);
-    pageComponents[(size_t) Page::Osc]
-        = std::make_unique<ParamGridPage> (processor.apvts, "Oscillators, Sub, FM",
-                                           [this]
-                                           {
-                                               std::vector<int> list;
-                                               for (int i = 0; i < kParamCount; ++i)
-                                               {
-                                                   const auto group = paramMeta (i).group;
-                                                   if (group == Group::Osc1 || group == Group::Osc2
-                                                       || group == Group::Osc3 || group == Group::Sub
-                                                       || group == Group::Fm)
-                                                       list.push_back (i);
-                                               }
-                                               return list;
-                                           }(),
-                                           learn);
-    pageComponents[(size_t) Page::Filter]
-        = std::make_unique<ParamGridPage> (processor.apvts, "Filter",
-                                           [this]
-                                           {
-                                               std::vector<int> list;
-                                               for (int i = 0; i < kParamCount; ++i)
-                                                   if (paramMeta (i).group == Group::Filt)
-                                                       list.push_back (i);
-                                               return list;
-                                           }(),
-                                           learn);
-    pageComponents[(size_t) Page::WobblePage]
-        = std::make_unique<ParamGridPage> (processor.apvts, "Wobble Engine",
-                                           [this]
-                                           {
-                                               std::vector<int> list;
-                                               for (int i = 0; i < kParamCount; ++i)
-                                                   if (paramMeta (i).group == Group::Wob)
-                                                       list.push_back (i);
-                                               return list;
-                                           }(),
-                                           learn);
-    pageComponents[(size_t) Page::Mod]
-        = std::make_unique<ParamGridPage> (processor.apvts, "LFOs and Envelopes",
-                                           [this]
-                                           {
-                                               std::vector<int> list;
-                                               for (int i = 0; i < kParamCount; ++i)
-                                               {
-                                                   const auto group = paramMeta (i).group;
-                                                   if (group == Group::Lfo || group == Group::Env)
-                                                       list.push_back (i);
-                                               }
-                                               return list;
-                                           }(),
-                                           learn);
-    pageComponents[(size_t) Page::Dist]
-        = std::make_unique<ParamGridPage> (processor.apvts, "Distortion",
-                                           [this]
-                                           {
-                                               std::vector<int> list;
-                                               for (int i = 0; i < kParamCount; ++i)
-                                                   if (paramMeta (i).group == Group::Dist)
-                                                       list.push_back (i);
-                                               return list;
-                                           }(),
-                                           learn);
-    pageComponents[(size_t) Page::Fx]
-        = std::make_unique<ParamGridPage> (processor.apvts, "Effects",
-                                           [this]
-                                           {
-                                               std::vector<int> list;
-                                               for (int i = 0; i < kParamCount; ++i)
-                                                   if (paramMeta (i).group == Group::Fx)
-                                                       list.push_back (i);
-                                               return list;
-                                           }(),
-                                           learn);
-    pageComponents[(size_t) Page::Matrix]
-        = std::make_unique<MatrixPage> (processor.apvts, learn);
-
-    for (int i = 0; i < (int) Page::kCount; ++i)
-    {
-        auto* component = pageComponents[(size_t) i].get();
-
-        if (i == (int) Page::Main)
-        {
-            addAndMakeVisible (*component);
-            continue;
-        }
-
-        auto viewport = std::make_unique<juce::Viewport>();
-        viewport->setViewedComponent (component, false);
-        viewport->setScrollBarsShown (true, false);
-        addAndMakeVisible (*viewport);
-        pageViewports[(size_t) i] = std::move (viewport);
-    }
+    advancedPage = std::make_unique<AdvancedPage> (processor.apvts);
+    advancedViewport.setViewedComponent (advancedPage.get(), false);
+    advancedViewport.setScrollBarsShown (true, false);
+    addChildComponent (advancedViewport);
 
     keyboard.setAvailableRange (0, 60);   // sub-bass to C4: the instrument's range
-    // Keep focus enabled so the computer keyboard plays notes once the strip is
-    // clicked - the fastest way to audition a patch inside the plug-in window.
     keyboard.setWantsKeyboardFocus (true);
     keyboard.setMouseClickGrabsKeyboardFocus (true);
     keyboard.setScrollButtonsVisible (false);
@@ -192,44 +88,46 @@ WobbleAudioProcessorEditor::WobbleAudioProcessorEditor (WobbleAudioProcessor& pr
     keyboard.setColour (juce::MidiKeyboardComponent::keyDownOverlayColourId,
                         theme::accent().withAlpha (0.75f));
     keyboard.setColour (juce::MidiKeyboardComponent::textLabelColourId, theme::textDim());
-
     addAndMakeVisible (keyboard);
 
     setResizable (true, true);
-    setResizeLimits (820, 520, 1800, 1100);
+    setResizeLimits (820, 560, 1800, 1100);
     setSize (1180, 760);
 
-    showPage (Page::Main);
     updateHeader();
-    startTimerHz (8);
+    startTimerHz (4);
 }
 
 WobbleAudioProcessorEditor::~WobbleAudioProcessorEditor()
 {
     stopTimer();
-    if (browser != nullptr)
-        browser.reset();
+    browser.reset();
+    advancedViewport.setViewedComponent (nullptr, false);
+    advancedPage.reset();
     setLookAndFeel (nullptr);
+}
+
+int WobbleAudioProcessorEditor::keyboardHeight() const
+{
+    return juce::jlimit (38, 58, getHeight() / 14);
 }
 
 void WobbleAudioProcessorEditor::paint (juce::Graphics& g)
 {
     g.fillAll (theme::background());
 
-    juce::ColourGradient glow (theme::accentDeep().withAlpha (0.18f), 0.0f, 0.0f,
+    juce::ColourGradient glow (theme::accentDeep().withAlpha (0.16f), 0.0f, 0.0f,
                                theme::background(), 0.0f, (float) getHeight() * 0.8f, false);
     g.setGradientFill (glow);
     g.fillAll();
 
-    auto header = getLocalBounds().removeFromTop (52).toFloat();
-    g.setColour (theme::panel().withAlpha (0.85f));
+    auto header = getLocalBounds().removeFromTop (54).toFloat();
+    g.setColour (theme::panel().withAlpha (0.9f));
     g.fillRect (header);
 
     g.setColour (theme::outline());
-    g.drawHorizontalLine (52, 0.0f, (float) getWidth());
-    g.drawHorizontalLine (52 + 38, 0.0f, (float) getWidth());
+    g.drawHorizontalLine (54, 0.0f, (float) getWidth());
 
-    // Recessed panel behind the playable keyboard strip.
     auto keys = getLocalBounds().removeFromBottom (keyboardHeight()).toFloat().reduced (6.0f, 2.0f);
     g.setColour (juce::Colour (0xff0d0a14));
     g.fillRoundedRectangle (keys, 8.0f);
@@ -241,98 +139,100 @@ void WobbleAudioProcessorEditor::resized()
 {
     auto bounds = getLocalBounds();
 
-    auto header = bounds.removeFromTop (52).reduced (14, 8);
-    titleLabel.setBounds (header.removeFromLeft (250));
-    auto transport = header.removeFromLeft (260);
-    previousButton.setBounds (transport.removeFromLeft (36).reduced (0, 2));
-    transport.removeFromLeft (4);
-    presetLabel.setBounds (transport.removeFromLeft (176));
-    transport.removeFromLeft (4);
-    nextButton.setBounds (transport.removeFromLeft (36).reduced (0, 2));
+    auto header = bounds.removeFromTop (54).reduced (12, 9);
+    titleLabel.setBounds (header.removeFromLeft (210));
 
-    meter.setBounds (header.removeFromRight (110).reduced (0, 10));
-    header.removeFromRight (8);
-    infoLabel.setBounds (header.removeFromRight (150));
-    header.removeFromRight (8);
-    browserButton.setBounds (header.removeFromRight (110).reduced (0, 2));
+    auto transport = header.removeFromLeft (276);
+    previousButton.setBounds (transport.removeFromLeft (32).reduced (0, 2));
+    transport.removeFromLeft (4);
+    presetLabel.setBounds (transport.removeFromLeft (196));
+    transport.removeFromLeft (4);
+    nextButton.setBounds (transport.removeFromLeft (32).reduced (0, 2));
+    header.removeFromLeft (10);
 
-    auto tabs = bounds.removeFromTop (38).reduced (12, 4);
-    const int tabWidth = tabs.getWidth() / (int) Page::kCount;
-    for (int i = 0; i < (int) Page::kCount; ++i)
-        pageButtons[(size_t) i]->setBounds (tabs.removeFromLeft (tabWidth).reduced (2, 0));
+    meter.setBounds (header.removeFromRight (84).reduced (0, 8));
+    header.removeFromRight (8);
+    infoLabel.setBounds (header.removeFromRight (132));
+    header.removeFromRight (8);
+    advancedButton.setBounds (header.removeFromRight (102).reduced (0, 2));
+    header.removeFromRight (6);
+    browserButton.setBounds (header.removeFromRight (92).reduced (0, 2));
 
     auto keyboardArea = bounds.removeFromBottom (keyboardHeight()).reduced (10, 5);
-    // 36 white keys across the strip so it fills the width at any window size.
     keyboard.setKeyWidth (juce::jmax (12.0f, (float) keyboardArea.getWidth() / 36.0f));
     keyboard.setBounds (keyboardArea);
 
-    layoutPage();
-}
+    auto content = bounds.reduced (8, 6);
 
-int WobbleAudioProcessorEditor::keyboardHeight() const
-{
-    return juce::jlimit (38, 58, getHeight() / 13);
-}
+    // The waveform is always on screen, including behind the ADVANCED drawer.
+    const int scopeHeight = juce::jlimit (58, 86, content.getHeight() / 8);
+    scope.setBounds (content.removeFromTop (scopeHeight));
+    content.removeFromTop (8);
 
-void WobbleAudioProcessorEditor::layoutPage()
-{
-    auto bounds = getLocalBounds();
-    bounds.removeFromTop (52 + 38);
-    bounds.removeFromBottom (keyboardHeight());
-    bounds.reduce (10, 6);
-
-    for (int i = 0; i < (int) Page::kCount; ++i)
+    if (advancedVisible)
     {
-        auto* viewport = pageViewports[(size_t) i].get();
-        auto* page = pageComponents[(size_t) i].get();
+        advancedViewport.setBounds (content);
 
-        if (viewport == nullptr || page == nullptr)
-        {
-            if (page != nullptr && i == (int) Page::Main)
-                page->setBounds (bounds);
-            continue;
-        }
+        const int pageWidth = juce::jmax (240, content.getWidth() - 16);
+        advancedPage->setSize (pageWidth, advancedPage->preferredHeight (pageWidth));
+        return;
+    }
 
-        viewport->setBounds (bounds);
-        const int visibleWidth = juce::jmax (200, bounds.getWidth() - 14);
-        int contentHeight = bounds.getHeight();
+    auto left = content.removeFromLeft (juce::jmax (320, content.getWidth() * 54 / 100));
+    content.removeFromLeft (8);
+    auto right = content;
 
-        if (auto* grid = dynamic_cast<ParamGridPage*> (page))
-        {
-            const int columns = juce::jlimit (2, 10, visibleWidth / 118);
-            grid->setColumns (columns);
-            const int rows = (grid->itemCount() + columns - 1) / columns;
-            contentHeight = juce::jmax (bounds.getHeight(), rows * 112);
-        }
-        else
-        {
-            contentHeight = juce::jmax (bounds.getHeight(), kMatrixSlots * 48 + 24);
-        }
+    pianoRoll.setBounds (left);
 
-        page->setBounds (0, 0, visibleWidth, contentHeight);
+    // Right: wobble curve, wobble targets, LFO slots, then the two pads.
+    const int wobbleHeight = juce::jlimit (104, 150, right.getHeight() * 24 / 100);
+    wobblePanel.setBounds (right.removeFromTop (wobbleHeight));
+    right.removeFromTop (6);
+
+    const int targetHeight = juce::jlimit (74, 100, right.getHeight() / 6);
+    wobbleTargets.setBounds (right.removeFromTop (targetHeight));
+    right.removeFromTop (6);
+
+    const int lfoHeight = juce::jlimit (84, 118, right.getHeight() / 3);
+    auto lfoRow = right.removeFromTop (lfoHeight);
+    const int slotWidth = lfoRow.getWidth() / 3;
+
+    for (int i = 0; i < 3; ++i)
+        lfoSlots[(size_t) i]->setBounds (lfoRow.removeFromLeft (slotWidth).reduced (i == 0 ? 0 : 3, 0));
+
+    right.removeFromTop (6);
+
+    if (right.getHeight() > 60)
+    {
+        auto padRow = right;
+        const int padWidth = padRow.getWidth() / 2;
+        filterPad.setBounds (padRow.removeFromLeft (padWidth).reduced (0, 0));
+        growlPad.setBounds (padRow.reduced (6, 0));
     }
 }
 
-void WobbleAudioProcessorEditor::showPage (Page page)
+void WobbleAudioProcessorEditor::updateHeader()
 {
-    currentPage = page;
+    presetLabel.setText (processor.presets.currentName(), juce::dontSendNotification);
+}
 
-    for (int i = 0; i < (int) Page::kCount; ++i)
-    {
-        const bool visible = (i == (int) page);
-        pageButtons[(size_t) i]->setToggleState (visible, juce::dontSendNotification);
+void WobbleAudioProcessorEditor::showAdvanced (bool shouldShow)
+{
+    advancedVisible = shouldShow;
+    advancedButton.setToggleState (shouldShow, juce::dontSendNotification);
 
-        if (auto* viewport = pageViewports[(size_t) i].get())
-        {
-            viewport->setVisible (visible);
-        }
-        else if (auto* component = pageComponents[(size_t) i].get())
-        {
-            component->setVisible (visible);
-        }
-    }
+    pianoRoll.setVisible (! shouldShow);
+    wobblePanel.setVisible (! shouldShow);
+    wobbleTargets.setVisible (! shouldShow);
+    filterPad.setVisible (! shouldShow);
+    growlPad.setVisible (! shouldShow);
 
-    layoutPage();
+    for (auto& slot : lfoSlots)
+        slot->setVisible (! shouldShow);
+
+    advancedViewport.setVisible (shouldShow);
+
+    resized();
 }
 
 void WobbleAudioProcessorEditor::openBrowser()
@@ -357,25 +257,16 @@ void WobbleAudioProcessorEditor::closeBrowser()
     updateHeader();
 }
 
-void WobbleAudioProcessorEditor::updateHeader()
-{
-    presetLabel.setText (processor.presets.currentName(), juce::dontSendNotification);
-    resized();
-}
-
 void WobbleAudioProcessorEditor::timerCallback()
 {
-    const float blockMs = processor.cpuLoad();
     const int voices = processor.engine.activeVoiceCount();
-    const int limit = processor.engine.effectiveVoiceLimit();
-    infoLabel.setText (juce::String (voices) + "/" + juce::String (limit) + " voices  |  "
-                           + juce::String (blockMs, 2) + " ms",
+    const float blockMs = processor.cpuLoad();
+
+    infoLabel.setText (juce::String (voices) + " voices  |  " + juce::String (blockMs, 2) + " ms",
                        juce::dontSendNotification);
 
-    if (browser == nullptr)
-        return;
-
-    browser->setBounds (getLocalBounds());
+    if (browser != nullptr)
+        browser->setBounds (getLocalBounds());
 }
 
 } // namespace mk

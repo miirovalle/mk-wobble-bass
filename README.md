@@ -13,10 +13,10 @@ parameter behaviour cannot diverge between platforms.
 
 | Path | Purpose |
 | --- | --- |
-| `Source/DSP/` | Portable engine: parameters, wavetables, oscillators, filters, LFOs, envelopes, distortion, effects, voice, engine, presets |
+| `Source/DSP/` | Portable engine: parameters, wavetables, oscillators, filters, LFOs, envelopes, distortion, effects, voice, engine, presets, sequencer |
 | `Source/Plugin/` | JUCE wrapper: APVTS parameter layout, MIDI, host tempo, state, presets, editor |
-| `Source/UI/` | Theme, touch knobs, animated wobble/scope display, preset browser, pages |
-| `Tests/CoreTests.cpp` | Headless DSP tests (tuning, wobble sync, filters, distortion, 56 presets) |
+| `Source/UI/` | Theme, graphical controls (waveform, wobble panel, LFO slots, XY pads), piano roll, advanced drawer, preset browser |
+| `Tests/CoreTests.cpp` | Headless DSP tests (tuning, wobble sync, filters, distortion, 56 presets, sequencer, idle silence) |
 | `Tools/Benchmark.cpp` | CPU and RAM measurement |
 | `Tools/MakeThumbnail.cpp` | Renders the real editor at 2x for marketing assets |
 | `Assets/` | iOS icon, thumbnail, App Store screenshot |
@@ -72,6 +72,27 @@ The job fails fast if the produced `.appex` is missing from `Payload/…/PlugIns
 or does not declare the `com.apple.AudioUnit-UI` extension point, so a broken
 IPA never reaches the artifacts.
 
+## The interface
+
+One screen, no knobs. Everything you touch is a picture that moves with what it
+does, and the output waveform is always visible - also behind the ADVANCED
+drawer.
+
+| Element | What it does |
+| --- | --- |
+| **WAVEFORM** strip | Live output scope, plus the peak in dB |
+| **PIANO ROLL** | 16 steps x 25 notes (C0-C2). Tap or drag cells to draw, PLAY/STOP, tap the BPM box and drag to change tempo, 1/16 - 1/8 - 1/32, OCT-/+ transpose, CLEAR |
+| **WOBBLE** curve | Drag X for rate (host-synced or free), Y for depth; the ten icons under the curve pick the shape |
+| **Wobble target tiles** | SYNC / FILTER / RESO / PITCH / WAVE / DIRT / WIDTH / FORMANT: tap a tile to wobble that target, tap again to switch it off |
+| **LFO 1-3** | One slot per LFO: drag X for rate, Y for depth, tap the shape chip to change the curve, tap SYNC to lock to the host tempo |
+| **FILTER pad** | XY: cutoff (X) and resonance (Y) on a live response curve |
+| **GROWL pad** | XY: distortion drive (X) and wobble depth (Y) on a live transfer curve |
+| **ADVANCED** | Every remaining parameter as a slim bar with its own mini-graph, grouped by section, plus the modulation matrix |
+
+The sequencer runs inside the plug-in: it uses the host tempo while the host is
+playing (so it locks to a DAW or AUM) and its own BPM otherwise, and it is saved
+with the plug-in state. Velocity for the piano roll notes is fixed at 0.9.
+
 ## Test and validate
 
 ```powershell
@@ -109,9 +130,14 @@ python Tools\make_thumbnails.py         # thumbnail + store screenshot
 | Scenario | % of one core |
 | --- | --- |
 | 1 voice, no effects | 0.24 % |
-| 1 voice, distortion | 0.36 % |
-| 8 voices, all effects | 1.86 % |
-| 8 voices, neuro preset | 2.53 % |
+| 1 voice, distortion | 0.31 % |
+| 1 voice, all effects | 0.49 % |
+| 8 voices, all effects | 1.84 % |
+| 8 voices, neuro preset | 2.57 % |
+
+Idle costs essentially nothing: with no voice active and the effect tails
+decayed, the whole master chain is skipped, and any non-finite sample resets the
+DSP state instead of turning into noise.
 
 Static footprint: 262 KB wavetable banks (procedural, 8 banks x 8 frames x
 9 mips) + ~710 KB engine buffers (16 voices, comb lines, delay, reverb).
@@ -133,3 +159,7 @@ The bottom strip is a real keyboard covering C-2 to C3 (MIDI 0-60), the register
 this instrument lives in. Click or tap keys, or click the strip once and play
 with the computer keyboard. Notes go through `MidiKeyboardState`, so hosts
 record them like any other MIDI input.
+
+For hands-free auditioning, draw a bassline in the piano roll and press PLAY -
+the notes are generated inside the plug-in, so they follow the host transport and
+record as normal MIDI into the track.

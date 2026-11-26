@@ -2,6 +2,7 @@
 
 #include "DSP/Engine.h"
 #include "DSP/Presets.h"
+#include "DSP/Sequencer.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_audio_utils/juce_audio_utils.h>
@@ -107,6 +108,7 @@ public:
     juce::AudioProcessorValueTreeState apvts;
     juce::MidiKeyboardState keyboardState;
     Engine engine;
+    Sequencer sequencer;      // built-in piano roll
     PresetManager presets;
 
     // MIDI learn

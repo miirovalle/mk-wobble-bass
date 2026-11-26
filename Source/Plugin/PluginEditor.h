@@ -1,10 +1,16 @@
 #pragma once
 
+// One screen, no knobs:
+//   left  - live waveform + the piano roll sequencer
+//   right - wobble curve, wobble-target tiles, three LFO slots, filter/growl pads
+// The ADVANCED drawer holds every remaining parameter as slim bars.
+
 #include "Plugin/PluginProcessor.h"
+#include "UI/GraphControls.h"
 #include "UI/Pages.h"
+#include "UI/PianoRoll.h"
 #include "UI/PresetBrowser.h"
 #include "UI/Theme.h"
-#include "UI/WobbleDisplay.h"
 
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <juce_gui_extra/juce_gui_extra.h>
@@ -26,14 +32,12 @@ public:
     void resized() override;
 
 private:
-    enum class Page : int { Main = 0, Voice, Osc, Filter, WobblePage, Mod, Dist, Fx, Matrix, kCount };
-
     void timerCallback() override;
-    void showPage (Page page);
+    void updateHeader();
     void openBrowser();
     void closeBrowser();
-    void updateHeader();
-    void layoutPage();
+    void showAdvanced (bool shouldShow);
+
     int keyboardHeight() const;
 
     WobbleAudioProcessor& processor;
@@ -45,17 +49,24 @@ private:
     juce::TextButton previousButton { "<" };
     juce::TextButton nextButton { ">" };
     juce::TextButton browserButton { "PRESETS" };
+    juce::TextButton advancedButton { "ADVANCED" };
     LevelMeter meter;
 
-    // Compact playable keyboard strip.
+    WaveScope scope;
+    PianoRoll pianoRoll;
+    WobblePanel wobblePanel;
+    WobbleTargets wobbleTargets;
+    std::array<std::unique_ptr<LfoSlot>, 3> lfoSlots;
+    FilterPad filterPad;
+    GrowlPad growlPad;
 
-    std::array<std::unique_ptr<juce::TextButton>, (size_t) Page::kCount> pageButtons;
-    std::array<std::unique_ptr<juce::Component>, (size_t) Page::kCount> pageComponents;
-    std::array<std::unique_ptr<juce::Viewport>, (size_t) Page::kCount> pageViewports;
+    juce::Viewport advancedViewport;
+    std::unique_ptr<AdvancedPage> advancedPage;
+    bool advancedVisible = false;
 
     std::unique_ptr<PresetBrowser> browser;
+
     juce::MidiKeyboardComponent keyboard;
-    Page currentPage = Page::Main;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (WobbleAudioProcessorEditor)
 };

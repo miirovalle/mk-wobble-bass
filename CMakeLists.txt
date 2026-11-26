@@ -131,8 +131,8 @@ if (MK_BUILD_PLUGIN)
         Source/Plugin/PluginProcessor.cpp
         Source/Plugin/PluginEditor.cpp
         Source/UI/Theme.cpp
-        Source/UI/Knob.cpp
-        Source/UI/WobbleDisplay.cpp
+        Source/UI/GraphControls.cpp
+        Source/UI/PianoRoll.cpp
         Source/UI/PresetBrowser.cpp
         Source/UI/Pages.cpp)
     target_include_directories(MKWobbleBass PRIVATE Source)
@@ -141,8 +141,8 @@ if (MK_BUILD_PLUGIN)
         Source/Plugin/PluginProcessor.cpp
         Source/Plugin/PluginEditor.cpp
         Source/UI/Theme.cpp
-        Source/UI/Knob.cpp
-        Source/UI/WobbleDisplay.cpp
+        Source/UI/GraphControls.cpp
+        Source/UI/PianoRoll.cpp
         Source/UI/PresetBrowser.cpp
         Source/UI/Pages.cpp)
 

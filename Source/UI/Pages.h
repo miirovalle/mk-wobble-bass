@@ -1,12 +1,11 @@
 #pragma once
 
-// Page components. Pages are generated from the parameter table, so every
-// parameter in the engine has a real, working control and nothing is a
-// placeholder.
+// The ADVANCED drawer: every engine parameter, grouped, as slim bars and
+// drop-downs. No rotary controls and no hidden parameters - it is the whole
+// synth with the same controls as the front page, just smaller.
 
 #include "DSP/Params.h"
-#include "UI/Knob.h"
-#include "UI/WobbleDisplay.h"
+#include "UI/GraphControls.h"
 #include "UI/Theme.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -14,64 +13,37 @@
 namespace mk
 {
 
-class WobbleAudioProcessor;
-
-using LearnCallback = std::function<void (int paramIndex)>;
-
-// Grid of knobs / combos for a list of parameter indices.
-class ParamGridPage final : public juce::Component
+class AdvancedPage final : public juce::Component
 {
 public:
-    ParamGridPage (juce::AudioProcessorValueTreeState& state, juce::String title,
-                   std::vector<int> paramIndices, LearnCallback learnCallback);
+    explicit AdvancedPage (juce::AudioProcessorValueTreeState& state);
 
     void paint (juce::Graphics&) override;
     void resized() override;
 
-    void setColumns (int columns);
-    int itemCount() const noexcept { return (int) controls.size(); }
+    int preferredHeight (int width) const;
 
 private:
-    juce::String title;
-    std::vector<std::unique_ptr<juce::Component>> controls;
-    int columns = 6;
-};
+    struct GroupView
+    {
+        juce::String title;
+        std::vector<std::unique_ptr<juce::Component>> items;
+    };
 
-class MainPage final : public juce::Component
-{
-public:
-    MainPage (juce::AudioProcessorValueTreeState& state, const Engine& engine, LearnCallback learnCallback);
-
-    void paint (juce::Graphics&) override;
-    void resized() override;
-
-    WobbleDisplay& display() noexcept { return wobbleDisplay; }
-
-private:
-    WobbleDisplay wobbleDisplay;
-    ParamCombo wobbleRate;
-    ParamKnob wobbleDepth;
-    std::array<std::unique_ptr<ParamKnob>, kMacroCount> macros;
-    juce::String title { "MAIN" };
-};
-
-class MatrixPage final : public juce::Component
-{
-public:
-    MatrixPage (juce::AudioProcessorValueTreeState& state, LearnCallback learnCallback);
-
-    void paint (juce::Graphics&) override;
-    void resized() override;
-
-private:
-    struct Row
+    struct MatrixRow
     {
         std::unique_ptr<ParamCombo> source;
         std::unique_ptr<ParamCombo> destination;
-        std::unique_ptr<ParamKnob> amount;
+        std::unique_ptr<ParamSlider> amount;
     };
 
-    std::array<Row, (size_t) kMatrixSlots> rows;
+    static int columnsFor (int width);
+
+    std::vector<GroupView> groups;
+    std::array<MatrixRow, (size_t) kMatrixSlots> matrix;
+    int columns = 3;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AdvancedPage)
 };
 
 } // namespace mk

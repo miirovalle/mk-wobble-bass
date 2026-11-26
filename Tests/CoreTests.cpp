@@ -1,5 +1,6 @@
 #include "DSP/Engine.h"
 #include "DSP/Presets.h"
+#include "DSP/Sequencer.h"
 
 #include <cmath>
 #include <cstdio>
@@ -286,6 +287,90 @@ void reportMemory()
                  (double) (wavetables + engine) / (1024.0 * 1024.0));
 }
 
+void testSequencer()
+{
+    mk::Sequencer seq;
+    seq.prepare (48000.0);
+    seq.setBpm (120.0);
+    seq.setDivision (1);                 // 1/16 -> 0.125 s per step
+    seq.set (0, 0, true);                // C1 on step 1
+    seq.set (8, 12, true);               // C2 on step 9
+
+    check (! seq.isPlaying(), "sequencer starts stopped");
+    check (seq.isSet (0, 0) && ! seq.isSet (0, 1), "sequencer stores single cells");
+    seq.toggle (0, 1);
+    check (seq.isSet (0, 1), "sequencer toggles cells");
+    seq.toggle (0, 1);
+
+    seq.setPlaying (true);
+
+    mk::Sequencer::Event events[mk::Sequencer::kMaxEvents];
+    const int firstCount = seq.advance (128, 120.0, true, events, mk::Sequencer::kMaxEvents);
+    check (firstCount == 1 && events[0].noteOn
+               && events[0].note == mk::Sequencer::rowToNote (0),
+           "sequencer fires the first step on the first block");
+    check (events[0].sampleOffset <= 1, "sequencer note lands at the top of the block");
+
+    bool sawNinthStep = false;
+    const int total = (int) (48000 * 1.2);
+
+    for (int done = 0; done < total; done += 128)
+    {
+        const int count = seq.advance (128, 120.0, true, events, mk::Sequencer::kMaxEvents);
+
+        for (int i = 0; i < count; ++i)
+            if (events[i].noteOn && events[i].note == mk::Sequencer::rowToNote (12))
+                sawNinthStep = true;
+    }
+
+    check (sawNinthStep, "sequencer reaches the ninth step");
+
+    seq.setPlaying (false);
+    seq.advance (128, 120.0, true, events, mk::Sequencer::kMaxEvents);
+    check (seq.advance (128, 120.0, true, events, mk::Sequencer::kMaxEvents) == 0,
+           "stopped sequencer emits nothing");
+}
+
+void testIdleSilenceForEveryPreset()
+{
+    // Regression guard: no preset may ring, hiss or self-oscillate when no note
+    // is playing, at every sample rate the iPad and desktop hosts use.
+    for (const double rate : { 44100.0, 48000.0 })
+    {
+        for (int preset = 0; preset < mk::factoryPresetCount(); ++preset)
+        {
+            mk::Engine engine;
+            engine.prepare (rate, 512);
+
+            mk::ParamSnapshot snapshot;
+            for (int p = 0; p < mk::kParamCount; ++p)
+                snapshot.values[p] = mk::paramMeta (p).def;
+
+            mk::applyFactoryPreset (preset, snapshot);
+            engine.params().setAll (snapshot);
+            engine.params().requestSnap();
+
+            const auto idle = renderEngine (engine, (int) (rate * 0.25));
+            check (rms (idle.left) < 1.0e-7, "preset is silent while idle");
+        }
+    }
+}
+
+void testReleaseTailEnds()
+{
+    mk::Engine engine;
+    engine.prepare (48000.0, 512);
+    engine.noteOn (33, 1.0f);
+    renderEngine (engine, 24000);
+    engine.allNotesOff (false);
+
+    const auto tail = renderEngine (engine, 48000 * 3);
+    const std::vector<float> lastSecond (tail.left.end() - 48000, tail.left.end());
+
+    check (rms (lastSecond) < 1.0e-6, "release tail decays to silence");
+    check (engine.activeVoiceCount() == 0, "all voices free after the tail");
+}
+
 } // namespace
 
 int main()
@@ -298,10 +383,13 @@ int main()
     testMonoAndGlide();
     testMatrixAndMacros();
     testPresets();
+    testSequencer();
+    testIdleSilenceForEveryPreset();
+    testReleaseTailEnds();
     reportMemory();
 
     if (failures == 0)
-        std::printf ("PASS: engine, tuning, wobble sync, filters, distortion, voices, presets\n");
+        std::printf ("PASS: engine, tuning, wobble, filters, voices, presets, sequencer\n");
     else
         std::printf ("%d failure(s)\n", failures);
 

@@ -122,6 +122,26 @@ int main (int argc, char** argv)
         check (keyPeak > 0.02, "on-screen keyboard plays the engine");
     }
 
+    // Built-in piano roll: one programmed note must make sound.
+    {
+        processor.engine.allNotesOff (true);
+        processor.sequencer.clear();
+        processor.sequencer.set (0, 0, true);
+        processor.sequencer.setPlaying (true);
+
+        double seqPeak = 0.0;
+        for (int block = 0; block < 200; ++block)
+        {
+            buffer.clear();
+            midi.clear();
+            processor.processBlock (buffer, midi);
+            seqPeak = juce::jmax (seqPeak, (double) buffer.getMagnitude (0, buffer.getNumSamples()));
+        }
+
+        processor.sequencer.setPlaying (false);
+        check (seqPeak > 0.02, "piano roll sequencer plays the engine");
+    }
+
     // State round-trip.
     juce::MemoryBlock state;
     processor.getStateInformation (state);
@@ -182,13 +202,11 @@ int main (int argc, char** argv)
         {
             if (auto* button = dynamic_cast<juce::TextButton*> (child))
             {
-                const auto text = button->getButtonText();
-                if (text == "MAIN" || text == "VOICE" || text == "OSC" || text == "FILTER"
-                    || text == "WOBBLE" || text == "MOD" || text == "DIST" || text == "FX"
-                    || text == "MATRIX")
+                if (button->getButtonText() == "ADVANCED")
                 {
                     if (button->onClick != nullptr) button->onClick();
-                    renderTo (*editor, "editor_page_" + text.toLowerCase() + ".png");
+                    renderTo (*editor, "editor_advanced.png");
+                    if (button->onClick != nullptr) button->onClick();
                 }
             }
         }

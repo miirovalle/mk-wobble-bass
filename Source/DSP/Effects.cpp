@@ -3,6 +3,10 @@
 namespace mk
 {
 
+// Modulation and gain coefficients are refreshed once per 32 samples: cheap
+// enough for an iPad, inaudible for anything slower than a click.
+constexpr int kControlChunk = 32;
+
 void MasterEffects::prepare (double sampleRate, bool ecoMode)
 {
     sr = sampleRate > 0.0 ? sampleRate : 48000.0;
@@ -184,38 +188,49 @@ void MasterEffects::processPhaser (float* l, float* r, int n) noexcept
     const float mix = clampf (settings.phaserMix, 0.0f, 1.0f);
     const int stages = clampValue (settings.phaserStages, 2, 12);
 
-    for (int i = 0; i < n; ++i)
+    // Coefficients only change at control rate: two tan() calls per 32 samples
+    // instead of per sample keeps this cheap on an iPad.
+    int done = 0;
+
+    while (done < n)
     {
-        phaserPhase += inc;
+        const int chunk = std::min (kControlChunk, n - done);
+
+        phaserPhase += inc * (float) chunk;
         if (phaserPhase >= 1.0f)
-            phaserPhase -= 1.0f;
+            phaserPhase -= std::floor (phaserPhase);
 
         const float modL = 0.5f + 0.5f * SineTable::instance().lookup (phaserPhase);
         const float modR = 0.5f + 0.5f * SineTable::instance().lookup (phaserPhase + 0.25f);
         const float freqL = 200.0f * std::exp2 (modL * depth * 5.0f);
         const float freqR = 200.0f * std::exp2 (modR * depth * 5.0f);
 
-        const float coeffL = (1.0f - fastTan (kPi * std::min (freqL, (float) sr * 0.45f) / (float) sr))
-                             / (1.0f + fastTan (kPi * std::min (freqL, (float) sr * 0.45f) / (float) sr));
-        const float coeffR = (1.0f - fastTan (kPi * std::min (freqR, (float) sr * 0.45f) / (float) sr))
-                             / (1.0f + fastTan (kPi * std::min (freqR, (float) sr * 0.45f) / (float) sr));
+        const float tanL = fastTan (kPi * std::min (freqL, (float) sr * 0.45f) / (float) sr);
+        const float tanR = fastTan (kPi * std::min (freqR, (float) sr * 0.45f) / (float) sr);
+        const float coeffL = (1.0f - tanL) / (1.0f + tanL);
+        const float coeffR = (1.0f - tanR) / (1.0f + tanR);
 
-        float xL = l[i] + phaserZ[0][stages - 1] * fb;
-        float xR = r[i] + phaserZ[1][stages - 1] * fb;
-
-        for (int s = 0; s < stages; ++s)
+        for (int i = done; i < done + chunk; ++i)
         {
-            const float yL = coeffL * xL + phaserZ[0][s];
-            phaserZ[0][s] = xL - coeffL * yL;
-            xL = yL;
+            float xL = l[i] + phaserZ[0][stages - 1] * fb;
+            float xR = r[i] + phaserZ[1][stages - 1] * fb;
 
-            const float yR = coeffR * xR + phaserZ[1][s];
-            phaserZ[1][s] = xR - coeffR * yR;
-            xR = yR;
+            for (int s = 0; s < stages; ++s)
+            {
+                const float yL = coeffL * xL + phaserZ[0][s];
+                phaserZ[0][s] = xL - coeffL * yL;
+                xL = yL;
+
+                const float yR = coeffR * xR + phaserZ[1][s];
+                phaserZ[1][s] = xR - coeffR * yR;
+                xR = yR;
+            }
+
+            l[i] += (xL - l[i]) * mix;
+            r[i] += (xR - r[i]) * mix;
         }
 
-        l[i] += (xL - l[i]) * mix;
-        r[i] += (xR - r[i]) * mix;
+        done += chunk;
     }
 }
 
@@ -266,6 +281,14 @@ void MasterEffects::processReverb (float* l, float* r, int n) noexcept
     const float mix = clampf (settings.reverbMix, 0.0f, 1.0f);
     static const float spread[kCombs] = { 0.0f, 0.13f, 0.29f, 0.41f, 0.53f, 0.67f, 0.79f, 0.91f };
 
+    // Comb lengths depend only on the size control, so resolve them once per
+    // block instead of eight times per sample.
+    int combLen[kCombs] {};
+    for (int c = 0; c < kCombs; ++c)
+        combLen[c] = clampValue ((int) ((float) combBuffer[c].size() * sizeScale
+                                        * (1.0f + spread[c] * 0.2f)),
+                                 16, (int) combBuffer[c].size() - 1);
+
     for (int i = 0; i < n; ++i)
     {
         const float input = (l[i] + r[i]) * 0.5f;
@@ -274,8 +297,7 @@ void MasterEffects::processReverb (float* l, float* r, int n) noexcept
         for (int c = 0; c < kCombs; ++c)
         {
             auto& buffer = combBuffer[c];
-            const int len = clampValue ((int) ((float) buffer.size() * sizeScale * (1.0f + spread[c] * 0.2f)),
-                                        16, (int) buffer.size() - 1);
+            const int len = combLen[c];
             int& index = combIndex[c];
             if (index >= len)
                 index = 0;
@@ -319,24 +341,36 @@ void MasterEffects::processCompressor (float* l, float* r, int n) noexcept
     const float slope = 1.0f - 1.0f / ratio;
 
     float maxReduction = 1.0f;
+    int done = 0;
 
-    for (int i = 0; i < n; ++i)
+    // One pow() per 32 samples instead of per sample: the dominant saving in
+    // this chain on ARM.
+    while (done < n)
     {
-        const float level = std::max (std::fabs (l[i]), std::fabs (r[i]));
-        const float coeff = level > compEnv ? compAttackCoeff : compReleaseCoeff;
-        compEnv += (level - compEnv) * coeff;
+        const int chunk = std::min (kControlChunk, n - done);
+
+        float blockPeak = 0.0f;
+        for (int i = done; i < done + chunk; ++i)
+            blockPeak = std::max (blockPeak, std::max (std::fabs (l[i]), std::fabs (r[i])));
+
+        const float coeff = blockPeak > compEnv ? compAttackCoeff : compReleaseCoeff;
+        compEnv += (blockPeak - compEnv) * coeff;
 
         float gain = 1.0f;
         if (compEnv > threshold)
         {
-            const float over = compEnv / threshold;
-            gain = std::pow (over, -slope);
+            gain = std::pow (compEnv / threshold, -slope);
             maxReduction = std::min (maxReduction, gain);
         }
 
         const float g = gain * makeup;
-        l[i] *= g;
-        r[i] *= g;
+        for (int i = done; i < done + chunk; ++i)
+        {
+            l[i] *= g;
+            r[i] *= g;
+        }
+
+        done += chunk;
     }
 
     lastGainReduction = -20.0f * std::log10 (std::max (maxReduction, 1.0e-4f));

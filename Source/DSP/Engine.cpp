@@ -708,20 +708,45 @@ void Engine::process (float* left, float* right, int numSamples)
         done += chunk;
     }
 
-    const ModValues globalMod = computeGlobalMod (workingParams);
-    const EffectSettings fx = makeEffectSettings (workingParams, globalMod);
-    effects.setSettings (fx);
-    effects.process (left, right, numSamples);
+    const bool hasSignal = [&]
+    {
+        for (int i = 0; i < numSamples; ++i)
+            if (left[i] != 0.0f || right[i] != 0.0f)
+                return true;
+        return false;
+    }();
+
+    // With no voices and decayed effect tails there is nothing to process, so
+    // the whole master chain is skipped: an idle plug-in costs next to nothing.
+    if (hasSignal || peakOut.load (std::memory_order_relaxed) > 1.0e-5f)
+    {
+        const ModValues globalMod = computeGlobalMod (workingParams);
+        const EffectSettings fx = makeEffectSettings (workingParams, globalMod);
+        effects.setSettings (fx);
+        effects.process (left, right, numSamples);
+    }
 
     const float masterGain = dbToGain (workingParams[P::outputDb]);
     float peak = 0.0f;
     double energy = 0.0;
     int scopeCounter = 0;
+    bool nonFinite = false;
 
     for (int i = 0; i < numSamples; ++i)
     {
-        float l = softLimit (left[i] * masterGain);
-        float r = softLimit (right[i] * masterGain);
+        float l = left[i];
+        float r = right[i];
+
+        // A blown-up filter or a host feeding garbage must never turn into
+        // permanent noise: drop the sample and reset the chain below.
+        if (! std::isfinite (l) || ! std::isfinite (r))
+        {
+            l = r = 0.0f;
+            nonFinite = true;
+        }
+
+        l = softLimit (l * masterGain);
+        r = softLimit (r * masterGain);
 
         left[i] = l;
         right[i] = r;
@@ -736,6 +761,16 @@ void Engine::process (float* left, float* right, int numSamples)
             scope[(size_t) index].store ((l + r) * 0.5f, std::memory_order_relaxed);
             scopeWrite.store (index, std::memory_order_relaxed);
         }
+    }
+
+    if (nonFinite)
+    {
+        effects.reset();
+
+        for (auto& voice : voices)
+            voice.reset();
+
+        peak = 0.0f;
     }
 
     meterOut.store ((float) std::sqrt (energy / (double) (2 * numSamples)), std::memory_order_relaxed);
