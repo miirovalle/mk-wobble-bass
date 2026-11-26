@@ -122,24 +122,25 @@ int main (int argc, char** argv)
         check (keyPeak > 0.02, "on-screen keyboard plays the engine");
     }
 
-    // Built-in piano roll: one programmed note must make sound.
+    // Trance gate: every other step closed must attenuate the held note.
     {
+        processor.engine.tranceGate().setPattern (0x5555);
         processor.engine.allNotesOff (true);
-        processor.sequencer.clear();
-        processor.sequencer.set (0, 0, true);
-        processor.sequencer.setPlaying (true);
+        midi.addEvent (juce::MidiMessage::noteOn (1, 33, 1.0f), 0);
 
-        double seqPeak = 0.0;
-        for (int block = 0; block < 200; ++block)
+        double quietest = 1.0;
+        for (int block = 0; block < 160; ++block)
         {
             buffer.clear();
-            midi.clear();
             processor.processBlock (buffer, midi);
-            seqPeak = juce::jmax (seqPeak, (double) buffer.getMagnitude (0, buffer.getNumSamples()));
+            midi.clear();
+
+            if (block > 20)
+                quietest = juce::jmin (quietest, (double) buffer.getMagnitude (0, buffer.getNumSamples()));
         }
 
-        processor.sequencer.setPlaying (false);
-        check (seqPeak > 0.02, "piano roll sequencer plays the engine");
+        check (quietest < 0.35, "trance gate closes on disabled steps");
+        processor.engine.tranceGate().setPattern (0x5555);
     }
 
     // State round-trip.
@@ -202,10 +203,10 @@ int main (int argc, char** argv)
         {
             if (auto* button = dynamic_cast<juce::TextButton*> (child))
             {
-                if (button->getButtonText() == "ADVANCED")
+                if (button->getButtonText() == "GATE")
                 {
                     if (button->onClick != nullptr) button->onClick();
-                    renderTo (*editor, "editor_advanced.png");
+                    renderTo (*editor, "editor_gate.png");
                     if (button->onClick != nullptr) button->onClick();
                 }
             }

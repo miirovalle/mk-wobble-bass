@@ -5,192 +5,166 @@ namespace mk
 namespace
 {
 
-constexpr int kItemHeight = 30;
-constexpr int kRowGap = 4;
-constexpr int kTitleHeight = 22;
-constexpr int kSectionPadding = 10;
-constexpr int kSectionGap = 8;
-
-const char* sectionTitle (Group group) noexcept
+juce::RangedAudioParameter* rangedParam (juce::AudioProcessorValueTreeState& state, int index)
 {
-    switch (group)
-    {
-        case Group::Glob: return "VOICE";
-        case Group::Osc1: return "OSC 1";
-        case Group::Osc2: return "OSC 2";
-        case Group::Osc3: return "OSC 3";
-        case Group::Sub:  return "SUB";
-        case Group::Fm:   return "FM";
-        case Group::Filt: return "FILTER";
-        case Group::Wob:  return "WOBBLE";
-        case Group::Lfo:  return "LFO";
-        case Group::Env:  return "ENVELOPES";
-        case Group::Dist: return "DISTORTION";
-        case Group::Fx:   return "EFFECTS";
-        case Group::Mac:  return "MACROS";
-        case Group::Mat:  return "MATRIX";
-        case Group::Misc: return "MISC";
-        default:          return "PARAMETERS";
-    }
+    return dynamic_cast<juce::RangedAudioParameter*> (state.getParameter (paramId (index)));
+}
+
+void writePlain (juce::AudioProcessorValueTreeState& state, int index, float plain)
+{
+    if (auto* parameter = rangedParam (state, index))
+        parameter->setValueNotifyingHost (parameter->convertTo0to1 (plain));
+}
+
+float readPlain (juce::AudioProcessorValueTreeState& state, int index)
+{
+    auto* parameter = rangedParam (state, index);
+    return parameter != nullptr ? parameter->convertFrom0to1 (parameter->getValue()) : 0.0f;
+}
+
+void styleChip (juce::TextButton& button, juce::Colour textColour)
+{
+    button.setColour (juce::TextButton::buttonColourId, theme::panelLight());
+    button.setColour (juce::TextButton::buttonOnColourId, theme::accentDeep());
+    button.setColour (juce::TextButton::textColourOffId, textColour);
+    button.setColour (juce::TextButton::textColourOnId, theme::text());
 }
 
 } // namespace
 
-AdvancedPage::AdvancedPage (juce::AudioProcessorValueTreeState& state)
+//==============================================================================
+WobblePage::WobblePage (juce::AudioProcessorValueTreeState& state, Engine& engine)
+    : canvas (state, engine),
+      rate (state, (int) P::wobRate, "RATE"),
+      depth (state, (int) P::wobDepth, "DEPTH"),
+      type (state),
+      apvts (state)
 {
-    for (int groupIndex = 0; groupIndex < (int) Group::kGroupCount; ++groupIndex)
+    addAndMakeVisible (canvas);
+    addAndMakeVisible (rate);
+    addAndMakeVisible (depth);
+    addAndMakeVisible (type);
+
+    for (auto* button : { &syncButton, &sineButton, &triButton, &sawButton, &squareButton, &clearButton })
     {
-        const auto group = (Group) groupIndex;
-
-        if (group == Group::Mat)
-            continue;
-
-        GroupView view;
-        view.title = sectionTitle (group);
-
-        for (int i = 0; i < kParamCount; ++i)
-        {
-            if (paramMeta (i).group != group)
-                continue;
-
-            int choiceCount = 0;
-
-            if (paramChoices (i, choiceCount) != nullptr)
-            {
-                auto combo = std::make_unique<ParamCombo> (state, i);
-                addAndMakeVisible (*combo);
-                view.items.push_back (std::move (combo));
-            }
-            else
-            {
-                auto slider = std::make_unique<ParamSlider> (state, i);
-                addAndMakeVisible (*slider);
-                view.items.push_back (std::move (slider));
-            }
-        }
-
-        if (! view.items.empty())
-            groups.push_back (std::move (view));
+        styleChip (*button, theme::text());
+        addAndMakeVisible (*button);
+        button->setColour (juce::TextButton::textColourOffId, theme::text());
     }
 
-    for (int slot = 0; slot < kMatrixSlots; ++slot)
+    syncButton.setClickingTogglesState (true);
+    syncButton.onClick = [this]
     {
-        auto& row = matrix[(size_t) slot];
-        const int base = (int) P::mat1Src + slot * 3;
-
-        row.source = std::make_unique<ParamCombo> (state, base, "Source " + juce::String (slot + 1));
-        row.destination = std::make_unique<ParamCombo> (state, base + 1, "Destination");
-        row.amount = std::make_unique<ParamSlider> (state, base + 2, "Amount");
-
-        addAndMakeVisible (*row.source);
-        addAndMakeVisible (*row.destination);
-        addAndMakeVisible (*row.amount);
-    }
-}
-
-int AdvancedPage::columnsFor (int width)
-{
-    return juce::jlimit (2, 5, width / 230);
-}
-
-int AdvancedPage::preferredHeight (int width) const
-{
-    const int columnsNow = columnsFor (width);
-    int total = 0;
-
-    for (const auto& group : groups)
-    {
-        const int rows = ((int) group.items.size() + columnsNow - 1) / columnsNow;
-        total += kTitleHeight + rows * (kItemHeight + kRowGap) + kSectionPadding * 2 + kSectionGap;
-    }
-
-    total += kTitleHeight + kMatrixSlots * (kItemHeight + kRowGap) + kSectionPadding * 2;
-
-    return juce::jmax (total, 400);
-}
-
-void AdvancedPage::resized()
-{
-    columns = columnsFor (juce::jmax (200, getWidth()));
-    const int itemWidth = juce::jmax (120, (getWidth() - kSectionPadding * 2) / columns);
-
-    int y = 0;
-
-    for (auto& group : groups)
-    {
-        y += kSectionPadding;
-
-        const int rows = ((int) group.items.size() + columns - 1) / columns;
-
-        for (size_t i = 0; i < group.items.size(); ++i)
-        {
-            const int column = (int) i % columns;
-            const int row = (int) i / columns;
-
-            group.items[i]->setBounds (kSectionPadding + column * itemWidth,
-                                       y + kTitleHeight + row * (kItemHeight + kRowGap),
-                                       itemWidth - 8, kItemHeight);
-        }
-
-        y += kTitleHeight + rows * (kItemHeight + kRowGap) + kSectionPadding + kSectionGap;
-    }
-
-    // Mod matrix rows.
-    y += kSectionPadding;
-    const int comboWidth = juce::jmax (90, (getWidth() - 2 * kSectionPadding) / 4);
-
-    for (auto& row : matrix)
-    {
-        row.source->setBounds (kSectionPadding, y, comboWidth, kItemHeight);
-        row.destination->setBounds (kSectionPadding + comboWidth + 6, y, comboWidth, kItemHeight);
-        row.amount->setBounds (kSectionPadding + (comboWidth + 6) * 2, y,
-                               juce::jmax (120, comboWidth * 2), kItemHeight);
-        y += kItemHeight + kRowGap;
-    }
-}
-
-void AdvancedPage::paint (juce::Graphics& g)
-{
-    g.fillAll (theme::background());
-
-    columns = columnsFor (juce::jmax (200, getWidth()));
-    const int itemWidth = juce::jmax (120, (getWidth() - kSectionPadding * 2) / columns);
-
-    int y = 0;
-
-    const auto drawSection = [&] (const juce::String& title, int contentHeight)
-    {
-        auto bounds = juce::Rectangle<int> (kSectionPadding / 2, y,
-                                            juce::jmax (40, getWidth() - kSectionPadding),
-                                            contentHeight).toFloat();
-
-        g.setColour (theme::panel());
-        g.fillRoundedRectangle (bounds, 10.0f);
-        g.setColour (theme::outline());
-        g.drawRoundedRectangle (bounds, 10.0f, 1.0f);
-
-        g.setColour (theme::accentBright());
-        g.setFont (theme::labelFont (11.0f));
-        g.drawFittedText (title.toUpperCase(),
-                          bounds.toNearestInt().reduced (kSectionPadding, 0).removeFromTop (kTitleHeight),
-                          juce::Justification::centredLeft, 1);
+        // wobMode: 0 = host sync, 1 = free running.
+        writePlain (apvts, (int) P::wobMode, syncButton.getToggleState() ? 0.0f : 1.0f);
     };
 
-    for (const auto& group : groups)
+    sineButton.onClick = [this] { canvas.loadShape (ShapeSine); };
+    triButton.onClick = [this] { canvas.loadShape (ShapeTriangle); };
+    sawButton.onClick = [this] { canvas.loadShape (ShapeSawUp); };
+    squareButton.onClick = [this] { canvas.loadShape (ShapeSquare); };
+    clearButton.onClick = [this] { canvas.loadShape (-1); };
+
+    refresh();
+}
+
+void WobblePage::refresh()
+{
+    const bool synced = readPlain (apvts, (int) P::wobMode) < 0.5f;
+    syncButton.setToggleState (synced, juce::dontSendNotification);
+}
+
+void WobblePage::paint (juce::Graphics& g)
+{
+    juce::ignoreUnused (g);
+}
+
+void WobblePage::resized()
+{
+    auto area = getLocalBounds().reduced (2);
+
+    auto knobRow = area.removeFromBottom (juce::jlimit (120, 180, area.getHeight() * 36 / 100));
+    area.removeFromBottom (8);
+
+    auto right = area.removeFromRight (juce::jmax (190, area.getWidth() * 32 / 100));
+    area.removeFromRight (8);
+    canvas.setBounds (area);
+
+    const int chipHeight = juce::jlimit (26, 38, right.getHeight() / 6);
+
+    auto row1 = right.removeFromTop (chipHeight);
+    const int quarter = row1.getWidth() / 4;
+    sineButton.setBounds (row1.removeFromLeft (quarter).reduced (2, 0));
+    triButton.setBounds (row1.removeFromLeft (quarter).reduced (2, 0));
+    sawButton.setBounds (row1.removeFromLeft (quarter).reduced (2, 0));
+    squareButton.setBounds (row1.reduced (2, 0));
+
+    right.removeFromTop (6);
+
+    auto row2 = right.removeFromTop (chipHeight);
+    const int half = row2.getWidth() / 2;
+    syncButton.setBounds (row2.removeFromLeft (half).reduced (2, 0));
+    clearButton.setBounds (row2.reduced (2, 0));
+
+    const int knobWidth = knobRow.getWidth() / 3;
+    rate.setBounds (knobRow.removeFromLeft (knobWidth).reduced (6, 0));
+    depth.setBounds (knobRow.removeFromLeft (knobWidth).reduced (6, 0));
+    type.setBounds (knobRow.reduced (6, 0));
+}
+
+//==============================================================================
+GatePage::GatePage (juce::AudioProcessorValueTreeState& state, Engine& engine)
+    : pattern (engine),
+      rate (state, (int) P::gateDiv, "RATE"),
+      depth (state, (int) P::gateDepth, "DEPTH"),
+      smooth (state, (int) P::gateSmooth, "SMOOTH"),
+      apvts (state)
+{
+    addAndMakeVisible (pattern);
+    addAndMakeVisible (rate);
+    addAndMakeVisible (depth);
+    addAndMakeVisible (smooth);
+
+    styleChip (gateButton, theme::text());
+    gateButton.setClickingTogglesState (true);
+    gateButton.onClick = [this]
     {
-        y += kSectionPadding;
+        writePlain (apvts, (int) P::gateOn, gateButton.getToggleState() ? 1.0f : 0.0f);
+    };
+    addAndMakeVisible (gateButton);
 
-        const int rows = ((int) group.items.size() + columns - 1) / columns;
-        const int contentHeight = kTitleHeight + rows * (kItemHeight + kRowGap) + kSectionPadding;
+    refresh();
+}
 
-        drawSection (group.title, contentHeight);
-        y += contentHeight + kSectionGap;
-    }
+void GatePage::refresh()
+{
+    const bool on = readPlain (apvts, (int) P::gateOn) > 0.5f;
+    gateButton.setToggleState (on, juce::dontSendNotification);
+    gateButton.setButtonText (on ? "GATE ON" : "GATE OFF");
+}
 
-    y += kSectionPadding;
-    drawSection ("Mod matrix", kTitleHeight + kMatrixSlots * (kItemHeight + kRowGap) + kSectionPadding);
+void GatePage::paint (juce::Graphics& g)
+{
+    juce::ignoreUnused (g);
+}
 
-    juce::ignoreUnused (itemWidth);
+void GatePage::resized()
+{
+    auto area = getLocalBounds().reduced (2);
+
+    auto knobRow = area.removeFromBottom (juce::jlimit (120, 180, area.getHeight() * 36 / 100));
+    area.removeFromBottom (8);
+
+    pattern.setBounds (area);
+
+    const int cellWidth = knobRow.getWidth() / 4;
+    rate.setBounds (knobRow.removeFromLeft (cellWidth).reduced (6, 0));
+    depth.setBounds (knobRow.removeFromLeft (cellWidth).reduced (6, 0));
+    smooth.setBounds (knobRow.removeFromLeft (cellWidth).reduced (6, 0));
+
+    auto buttonCell = knobRow.reduced (10, 0);
+    gateButton.setBounds (buttonCell.withSizeKeepingCentre (buttonCell.getWidth(),
+                                                            juce::jmin (56, buttonCell.getHeight())));
 }
 
 } // namespace mk

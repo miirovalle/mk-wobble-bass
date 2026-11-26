@@ -10,6 +10,8 @@
 #include "DSP/MkCommon.h"
 #include "DSP/Params.h"
 
+#include <atomic>
+
 namespace mk
 {
 
@@ -121,6 +123,41 @@ private:
 class WobbleEngine
 {
 public:
+    // The drawable shape: 128 points the UI writes and the audio thread reads
+    // through relaxed atomics, so drawing never blocks or allocates.
+    static constexpr int kCustomPoints = 128;
+
+    WobbleEngine() noexcept
+    {
+        for (int i = 0; i < kCustomPoints; ++i)
+            custom[(size_t) i].store (std::sin (kTwoPi * (float) i / (float) kCustomPoints),
+                                      std::memory_order_relaxed);
+    }
+
+    void setCustomPoint (int index, float value) noexcept
+    {
+        if (index < 0 || index >= kCustomPoints)
+            return;
+
+        custom[(size_t) index].store (clampf (value, -1.0f, 1.0f), std::memory_order_relaxed);
+    }
+
+    float customPoint (int index) const noexcept
+    {
+        return custom[(size_t) clampValue (index, 0, kCustomPoints - 1)].load (std::memory_order_relaxed);
+    }
+
+    float customAt (float phase01) const noexcept
+    {
+        const float p = phase01 - std::floor (phase01);
+        const float position = p * (float) kCustomPoints;
+        const int i0 = (int) position & (kCustomPoints - 1);
+        const int i1 = (i0 + 1) & (kCustomPoints - 1);
+        return lerp (custom[(size_t) i0].load (std::memory_order_relaxed),
+                     custom[(size_t) i1].load (std::memory_order_relaxed),
+                     position - std::floor (position));
+    }
+
     void prepare (double sampleRate) noexcept
     {
         sr = sampleRate > 0.0 ? sampleRate : 48000.0;
@@ -172,6 +209,8 @@ public:
             raw = holdValue;
         else if (shape == ShapeSampleHold)
             raw = std::floor (holdValue * 4.0f) * 0.25f;
+        else if (shape == ShapeCustom)
+            raw = customAt (phase);
         else
             raw = shapeValue (shape, phase, 0.6f);
 
@@ -198,6 +237,7 @@ private:
     float smoothed = 0.0f, smoothCoeff = 0.2f, holdValue = 0.0f;
     int shape = ShapeSine;
     XorShiftRng rng;
+    std::array<std::atomic<float>, (size_t) kCustomPoints> custom {};
 };
 
 } // namespace mk

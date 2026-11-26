@@ -25,6 +25,7 @@ const char* const kQuality[] = { "Eco", "Normal", "High" };
 const char* const kOnOff[] = { "Off", "On" };
 const char* const kFreeSync[] = { "Free", "Sync" };
 const char* const kSyncFree[] = { "Sync", "Free" };
+const char* const kGateDivisions[] = { "1/32", "1/16", "1/8", "1/4" };
 const char* const kBanks[] = { "Basic", "Analog", "Digital", "Metallic",
                                "Aggressive", "Formant", "Vocal", "Growl" };
 const char* const kWaves[] = { "Saw", "Square", "Pulse", "Triangle", "Sine",
@@ -165,7 +166,8 @@ const char* const* paramChoices (int index, int& count) noexcept
         case (int) P::distType: count = 12; return kDistTypes;
         case (int) P::distPre: count = 2; return kPrePost;
         case (int) P::wobMode: count = 2; return kSyncFree;
-        case (int) P::wobDiv: case (int) P::dlDiv: count = kDivisionCount; return syncDivisionNames();
+        case (int) P::gateOn: count = 2; return kOnOff;
+        case (int) P::gateDiv: count = 4; return kGateDivisions;        case (int) P::wobDiv: case (int) P::dlDiv: count = kDivisionCount; return syncDivisionNames();
         case (int) P::wobShape: count = 10; return kWobbleShapes;
         case (int) P::phStages: count = 11; return kPhStages;
         case (int) P::dlSync: count = 2; return kFreeSync;

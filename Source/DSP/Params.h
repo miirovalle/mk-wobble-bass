@@ -26,6 +26,7 @@ namespace mk
     E(Env)                                                                                        \
     E(Dist)                                                                                       \
     E(Fx)                                                                                         \
+    E(Gate)                                                                                       \
     E(Mac)                                                                                        \
     E(Mat)                                                                                        \
     E(Misc)
@@ -281,7 +282,12 @@ using U = Unit;
     X(mat12Dst,     Mat,  0.0f,    20.0f,    0.0f,   Raw)                                          \
     X(mat12Amt,     Mat, -1.0f,    1.0f,     0.0f,   Raw)                                          \
                                                                                                    \
-    X(drift,        Misc, 0.0f,    1.0f,     0.15f,  Pct)
+    X(drift,        Misc, 0.0f,    1.0f,     0.15f,  Pct)                                          \
+                                                                                                   \
+    X(gateOn,       Gate, 0.0f,    1.0f,     1.0f,   Raw)                                          \
+    X(gateDiv,      Gate, 0.0f,    3.0f,     1.0f,   Raw)   /* 1/32, 1/16, 1/8, 1/4 */             \
+    X(gateDepth,    Gate, 0.0f,    1.0f,     0.92f,  Pct)                                          \
+    X(gateSmooth,   Gate, 0.0f,    1.0f,     0.35f,  Pct)
 // clang-format on
 
 enum class P : int

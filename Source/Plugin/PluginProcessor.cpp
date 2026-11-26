@@ -338,7 +338,6 @@ juce::AudioProcessorValueTreeState::ParameterLayout WobbleAudioProcessor::create
 void WobbleAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
     engine.prepare (sampleRate, samplesPerBlock);
-    sequencer.prepare (sampleRate);
     keyboardState.reset();
     monoScratch.setSize (1, juce::jmax (samplesPerBlock, 32));
     pushParametersToEngine();
@@ -354,7 +353,6 @@ void WobbleAudioProcessor::releaseResources()
 void WobbleAudioProcessor::reset()
 {
     engine.allNotesOff (true);
-    sequencer.reset();
     keyboardState.allNotesOff (1);
 }
 
@@ -476,16 +474,13 @@ void WobbleAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
 
     pushParametersToEngine();
 
-    bool hostPlaying = false;
-
     if (auto* playHead = getPlayHead())
     {
         if (const auto position = playHead->getPosition())
         {
             if (const auto bpm = position->getBpm())
                 engine.setTempo (*bpm);
-            hostPlaying = position->getIsPlaying();
-            engine.setTransportPlaying (hostPlaying);
+            engine.setTransportPlaying (position->getIsPlaying());
         }
     }
 
@@ -493,85 +488,17 @@ void WobbleAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
     auto* left = buffer.getWritePointer (0);
     auto* right = buffer.getNumChannels() > 1 ? buffer.getWritePointer (1) : monoScratch.getWritePointer (0);
 
-    // Host MIDI and the built-in piano roll share one sample-accurate timeline.
-    struct TimedItem
-    {
-        int position = 0;
-        bool isSequencer = false;
-        bool noteOn = false;
-        int note = 0;
-        juce::MidiMessage message;
-    };
-
-    std::array<TimedItem, 192> timeline;
-    int itemCount = 0;
-
+    // MIDI is split so note events land on the right sample within the block.
+    int lastSample = 0;
     for (const auto metadata : midi)
     {
-        if (itemCount >= (int) timeline.size())
-            break;
-
-        auto& item = timeline[(size_t) itemCount++];
-        item.position = juce::jlimit (0, numSamples, metadata.samplePosition);
-        item.message = metadata.getMessage();
-    }
-
-    Sequencer::Event seqEvents[Sequencer::kMaxEvents];
-    const int seqCount = sequencer.advance (numSamples, engine.tempo(), hostPlaying,
-                                            seqEvents, Sequencer::kMaxEvents);
-
-    for (int i = 0; i < seqCount && itemCount < (int) timeline.size(); ++i)
-    {
-        auto& item = timeline[(size_t) itemCount++];
-        item.position = juce::jlimit (0, numSamples, seqEvents[i].sampleOffset);
-        item.isSequencer = true;
-        item.note = seqEvents[i].note;
-        item.noteOn = seqEvents[i].noteOn;
-    }
-
-    // Stable insertion sort: host MIDI keeps its order, sequencer notes slot in.
-    for (int i = 1; i < itemCount; ++i)
-    {
-        const auto value = timeline[(size_t) i];
-        int j = i - 1;
-
-        while (j >= 0 && timeline[(size_t) j].position > value.position)
+        const int position = juce::jlimit (0, numSamples, metadata.samplePosition);
+        if (position > lastSample)
         {
-            timeline[(size_t) (j + 1)] = timeline[(size_t) j];
-            --j;
+            engine.process (left + lastSample, right + lastSample, position - lastSample);
+            lastSample = position;
         }
-
-        timeline[(size_t) (j + 1)] = value;
-    }
-
-    int lastSample = 0;
-
-    for (int i = 0; i < itemCount; ++i)
-    {
-        const auto& item = timeline[(size_t) i];
-
-        if (item.position > lastSample)
-        {
-            engine.process (left + lastSample, right + lastSample, item.position - lastSample);
-            lastSample = item.position;
-        }
-
-        if (! item.isSequencer)
-        {
-            handleMidi (item.message);
-            continue;
-        }
-
-        if (item.noteOn)
-        {
-            engine.noteOn (item.note, 0.9f);
-            keyboardState.noteOn (1, item.note, 0.9f);
-        }
-        else
-        {
-            engine.noteOff (item.note);
-            keyboardState.noteOff (1, item.note, 0.0f);
-        }
+        handleMidi (metadata.getMessage());
     }
 
     if (lastSample < numSamples)
@@ -611,15 +538,13 @@ void WobbleAudioProcessor::getStateInformation (juce::MemoryBlock& destination)
             mappings.add (juce::String (cc) + ":" + juce::String (ccMap[(size_t) cc]));
     state.setProperty ("midiMap", mappings.joinIntoString (";"), nullptr);
 
-    state.setProperty ("seqOn", sequencer.isPlaying(), nullptr);
-    state.setProperty ("seqBpm", sequencer.bpm(), nullptr);
-    state.setProperty ("seqDiv", sequencer.division(), nullptr);
+    // The drawn wobble curve travels with the session.
+    juce::StringArray points;
+    for (int i = 0; i < Engine::kWobblePoints; ++i)
+        points.add (juce::String (engine.wobblePoint (i), 4));
 
-    juce::StringArray words;
-    for (int step = 0; step < Sequencer::kSteps; ++step)
-        words.add (juce::String::toHexString ((int) sequencer.stepWord (step)));
-
-    state.setProperty ("seqPattern", words.joinIntoString (";"), nullptr);
+    state.setProperty ("wobbleCurve", points.joinIntoString (","), nullptr);
+    state.setProperty ("gatePattern", (int) engine.tranceGate().patternMask(), nullptr);
 
     if (auto xml = state.createXml())
         copyXmlToBinary (*xml, destination);
@@ -647,16 +572,12 @@ void WobbleAudioProcessor::setStateInformation (const void* data, int size)
             ccMap[(size_t) cc] = param;
     }
 
-    sequencer.setPlaying ((bool) xml->getBoolAttribute ("seqOn", false));
-    sequencer.setBpm (xml->getDoubleAttribute ("seqBpm", 120.0));
-    sequencer.setDivision (xml->getIntAttribute ("seqDiv", 1));
+    juce::StringArray curvePoints;
+    curvePoints.addTokens (xml->getStringAttribute ("wobbleCurve"), ",", "");
+    for (int i = 0; i < Engine::kWobblePoints && i < curvePoints.size(); ++i)
+        engine.setWobblePoint (i, curvePoints[i].getFloatValue());
 
-    juce::StringArray seqWords;
-    seqWords.addTokens (xml->getStringAttribute ("seqPattern"), ";", "");
-    for (int step = 0; step < Sequencer::kSteps; ++step)
-        sequencer.setStepWord (step, step < seqWords.size()
-                                           ? (uint32_t) seqWords[step].getHexValue32()
-                                           : 0u);
+    engine.tranceGate().setPattern ((uint16_t) xml->getIntAttribute ("gatePattern", 0x5555));
 
     engine.params().requestSnap();
 }

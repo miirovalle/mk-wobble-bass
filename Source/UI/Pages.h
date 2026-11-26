@@ -1,10 +1,9 @@
 #pragma once
 
-// The ADVANCED drawer: every engine parameter, grouped, as slim bars and
-// drop-downs. No rotary controls and no hidden parameters - it is the whole
-// synth with the same controls as the front page, just smaller.
+// The two tabs: WOBBLE (drawable LFO + three knobs) and GATE (trance gate).
 
-#include "DSP/Params.h"
+#include "DSP/Engine.h"
+#include "UI/GatePattern.h"
 #include "UI/GraphControls.h"
 #include "UI/Theme.h"
 
@@ -13,37 +12,54 @@
 namespace mk
 {
 
-class AdvancedPage final : public juce::Component
+class WobblePage final : public juce::Component
 {
 public:
-    explicit AdvancedPage (juce::AudioProcessorValueTreeState& state);
+    WobblePage (juce::AudioProcessorValueTreeState&, Engine&);
 
     void paint (juce::Graphics&) override;
     void resized() override;
 
-    int preferredHeight (int width) const;
+    // Keeps the SYNC chip in step with host automation of the wobble mode.
+    void refresh();
 
 private:
-    struct GroupView
-    {
-        juce::String title;
-        std::vector<std::unique_ptr<juce::Component>> items;
-    };
+    DrawableLfo canvas;
+    ParamKnob rate;
+    ParamKnob depth;
+    TypeKnob type;
+    juce::TextButton syncButton { "SYNC" };
+    juce::TextButton sineButton { "SINE" };
+    juce::TextButton triButton { "TRI" };
+    juce::TextButton sawButton { "SAW" };
+    juce::TextButton squareButton { "SQUARE" };
+    juce::TextButton clearButton { "CLEAR" };
 
-    struct MatrixRow
-    {
-        std::unique_ptr<ParamCombo> source;
-        std::unique_ptr<ParamCombo> destination;
-        std::unique_ptr<ParamSlider> amount;
-    };
+    juce::AudioProcessorValueTreeState& apvts;
 
-    static int columnsFor (int width);
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (WobblePage)
+};
 
-    std::vector<GroupView> groups;
-    std::array<MatrixRow, (size_t) kMatrixSlots> matrix;
-    int columns = 3;
+class GatePage final : public juce::Component
+{
+public:
+    GatePage (juce::AudioProcessorValueTreeState&, Engine&);
 
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AdvancedPage)
+    void paint (juce::Graphics&) override;
+    void resized() override;
+
+    void refresh();
+
+private:
+    GatePattern pattern;
+    ParamKnob rate;
+    ParamKnob depth;
+    ParamKnob smooth;
+    juce::TextButton gateButton { "GATE ON" };
+
+    juce::AudioProcessorValueTreeState& apvts;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (GatePage)
 };
 
 } // namespace mk

@@ -8,6 +8,9 @@ dist/
 # JUCE fetched by CI (see .github/workflows)
 external/JUCE/
 
+# Reference-only source drop (GPLv3 Gate12), not part of this plug-in
+MK RATTUS TRANCE GATE/
+
 # IDE / OS leftovers
 .vs/
 .vscode/*.log

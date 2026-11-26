@@ -100,6 +100,7 @@ void Engine::prepare (double sampleRate, int maximumBlockSize)
         lfo.prepare (sr);
 
     wobble.prepare (sr);
+    gate.prepare (sr);
     effects.prepare (sr, false);
     store.prepare (sr);
     reset();
@@ -114,6 +115,7 @@ void Engine::reset()
         lfo.prepare (sr);
 
     wobble.prepare (sr);
+    gate.reset();
     effects.reset();
 
     heldNotes.fill (false);
@@ -715,6 +717,12 @@ void Engine::process (float* left, float* right, int numSamples)
                 return true;
         return false;
     }();
+
+    // Trance gate sits between the voices and the master effects, so reverb and
+    // delay tails keep running through the gaps.
+    gate.setParameters (workingParams[P::gateOn] > 0.5f, (int) workingParams[P::gateDiv],
+                        workingParams[P::gateDepth], workingParams[P::gateSmooth], hostBpm);
+    gate.process (left, right, numSamples);
 
     // With no voices and decayed effect tails there is nothing to process, so
     // the whole master chain is skipped: an idle plug-in costs next to nothing.

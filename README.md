@@ -13,10 +13,10 @@ parameter behaviour cannot diverge between platforms.
 
 | Path | Purpose |
 | --- | --- |
-| `Source/DSP/` | Portable engine: parameters, wavetables, oscillators, filters, LFOs, envelopes, distortion, effects, voice, engine, presets, sequencer |
+| `Source/DSP/` | Portable engine: parameters, wavetables, oscillators, filters, LFOs, envelopes, distortion, effects, voice, engine, presets, drawable wobble shape, trance gate |
 | `Source/Plugin/` | JUCE wrapper: APVTS parameter layout, MIDI, host tempo, state, presets, editor |
-| `Source/UI/` | Theme, graphical controls (waveform, wobble panel, LFO slots, XY pads), piano roll, advanced drawer, preset browser |
-| `Tests/CoreTests.cpp` | Headless DSP tests (tuning, wobble sync, filters, distortion, 56 presets, sequencer, idle silence) |
+| `Source/UI/` | Theme, knobs, drawable LFO canvas, trance gate pattern, output scope, preset browser |
+| `Tests/CoreTests.cpp` | Headless DSP tests (tuning, wobble sync, filters, distortion, 56 presets, trance gate, idle silence) |
 | `Tools/Benchmark.cpp` | CPU and RAM measurement |
 | `Tools/MakeThumbnail.cpp` | Renders the real editor at 2x for marketing assets |
 | `Assets/` | iOS icon, thumbnail, App Store screenshot |
@@ -74,24 +74,38 @@ IPA never reaches the artifacts.
 
 ## The interface
 
-One screen, no knobs. Everything you touch is a picture that moves with what it
-does, and the output waveform is always visible - also behind the ADVANCED
-drawer.
+Two tabs, a handful of controls, nothing else. The output waveform sits under the
+header on both tabs.
+
+**WOBBLE tab**
 
 | Element | What it does |
 | --- | --- |
-| **WAVEFORM** strip | Live output scope, plus the peak in dB |
-| **PIANO ROLL** | 16 steps x 25 notes (C0-C2). Tap or drag cells to draw, PLAY/STOP, tap the BPM box and drag to change tempo, 1/16 - 1/8 - 1/32, OCT-/+ transpose, CLEAR |
-| **WOBBLE** curve | Drag X for rate (host-synced or free), Y for depth; the ten icons under the curve pick the shape |
-| **Wobble target tiles** | SYNC / FILTER / RESO / PITCH / WAVE / DIRT / WIDTH / FORMANT: tap a tile to wobble that target, tap again to switch it off |
-| **LFO 1-3** | One slot per LFO: drag X for rate, Y for depth, tap the shape chip to change the curve, tap SYNC to lock to the host tempo |
-| **FILTER pad** | XY: cutoff (X) and resonance (Y) on a live response curve |
-| **GROWL pad** | XY: distortion drive (X) and wobble depth (Y) on a live transfer curve |
-| **ADVANCED** | Every remaining parameter as a slim bar with its own mini-graph, grouped by section, plus the modulation matrix |
+| **DRAW THE WOBBLE** | Draw the wobble shape with one finger; the playhead shows where the wobble is now |
+| **SINE / TRI / SAW / SQUARE / CLEAR** | Replaces the drawing with a classic shape (or a flat line) in one tap |
+| **SYNC** | Locks the wobble to the host tempo instead of the free-running rate |
+| **RATE** | Wobble speed: tempo division when synced, Hz when free |
+| **DEPTH** | How far the wobble swings |
+| **WOBBLE TYPE** | What the wobble moves: FILTER, RESO, PITCH, WAVE, DIRT, WIDTH, FORMANT, FM |
 
-The sequencer runs inside the plug-in: it uses the host tempo while the host is
-playing (so it locks to a DAW or AUM) and its own BPM otherwise, and it is saved
-with the plug-in state. Velocity for the piano roll notes is fixed at 0.9.
+Drawing on the canvas switches the engine to the drawn curve, so what you see is
+exactly what modulates the sound. The curve is saved with the plug-in state.
+
+**GATE tab**
+
+| Element | What it does |
+| --- | --- |
+| **TRANCE GATE** | Sixteen steps: tap or drag to open and close them. The outline follows the playhead and the bar at the bottom shows the live gain |
+| **RATE** | 1/32, 1/16, 1/8 or 1/4, always locked to the host tempo |
+| **DEPTH** | How far closed steps go: 0 % leaves the signal untouched, 100 % is full silence |
+| **SMOOTH** | Attack/release of the gate: 0 % is a hard chop, 100 % is a soft pump |
+| **GATE ON** | Bypasses the gate while keeping the pattern |
+
+The gate is an original, self-contained implementation
+([TranceGate.h](Source/DSP/TranceGate.h)): no Gate12 or other third-party gating
+code is compiled into this plug-in, so nothing here changes the licensing of the
+project. It runs between the voices and the master effects, so reverb and delay
+tails keep ringing through the gaps.
 
 ## Test and validate
 
@@ -159,7 +173,3 @@ The bottom strip is a real keyboard covering C-2 to C3 (MIDI 0-60), the register
 this instrument lives in. Click or tap keys, or click the strip once and play
 with the computer keyboard. Notes go through `MidiKeyboardState`, so hosts
 record them like any other MIDI input.
-
-For hands-free auditioning, draw a bassline in the piano roll and press PLAY -
-the notes are generated inside the plug-in, so they follow the host transport and
-record as normal MIDI into the track.

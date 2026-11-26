@@ -1,6 +1,6 @@
 #include "DSP/Engine.h"
 #include "DSP/Presets.h"
-#include "DSP/Sequencer.h"
+#include "DSP/TranceGate.h"
 
 #include <cmath>
 #include <cstdio>
@@ -287,48 +287,42 @@ void reportMemory()
                  (double) (wavetables + engine) / (1024.0 * 1024.0));
 }
 
-void testSequencer()
+void testTranceGate()
 {
-    mk::Sequencer seq;
-    seq.prepare (48000.0);
-    seq.setBpm (120.0);
-    seq.setDivision (1);                 // 1/16 -> 0.125 s per step
-    seq.set (0, 0, true);                // C1 on step 1
-    seq.set (8, 12, true);               // C2 on step 9
+    mk::TranceGate gate;
+    gate.prepare (48000.0);
+    gate.setPattern (0x5555);            // odd steps open
+    gate.setParameters (true, 1, 1.0f, 0.0f, 120.0);   // 1/16, full depth, no smoothing
 
-    check (! seq.isPlaying(), "sequencer starts stopped");
-    check (seq.isSet (0, 0) && ! seq.isSet (0, 1), "sequencer stores single cells");
-    seq.toggle (0, 1);
-    check (seq.isSet (0, 1), "sequencer toggles cells");
-    seq.toggle (0, 1);
+    // 120 BPM, 1/16 -> 6000 samples per step at 48 kHz.
+    std::vector<float> left (48000, 1.0f), right (48000, 1.0f);
+    gate.process (left.data(), right.data(), (int) left.size());
 
-    seq.setPlaying (true);
-
-    mk::Sequencer::Event events[mk::Sequencer::kMaxEvents];
-    const int firstCount = seq.advance (128, 120.0, true, events, mk::Sequencer::kMaxEvents);
-    check (firstCount == 1 && events[0].noteOn
-               && events[0].note == mk::Sequencer::rowToNote (0),
-           "sequencer fires the first step on the first block");
-    check (events[0].sampleOffset <= 1, "sequencer note lands at the top of the block");
-
-    bool sawNinthStep = false;
-    const int total = (int) (48000 * 1.2);
-
-    for (int done = 0; done < total; done += 128)
+    const auto averageOver = [] (const std::vector<float>& data, int start, int length)
     {
-        const int count = seq.advance (128, 120.0, true, events, mk::Sequencer::kMaxEvents);
+        double sum = 0.0;
+        for (int i = start; i < start + length; ++i)
+            sum += (double) data[(size_t) i];
+        return sum / (double) length;
+    };
 
-        for (int i = 0; i < count; ++i)
-            if (events[i].noteOn && events[i].note == mk::Sequencer::rowToNote (12))
-                sawNinthStep = true;
-    }
+    check (averageOver (left, 400, 1500) > 0.9, "gate passes an enabled step");
+    check (averageOver (left, 6400, 1500) < 0.1, "gate silences a disabled step");
 
-    check (sawNinthStep, "sequencer reaches the ninth step");
+    // Bypass must be an exact pass-through.
+    gate.setParameters (false, 1, 1.0f, 0.0f, 120.0);
+    std::vector<float> passL (4800, 1.0f), passR (4800, 1.0f);
+    gate.process (passL.data(), passR.data(), (int) passL.size());
+    check (passL[4799] > 0.999f, "gate bypass is a pass-through");
 
-    seq.setPlaying (false);
-    seq.advance (128, 120.0, true, events, mk::Sequencer::kMaxEvents);
-    check (seq.advance (128, 120.0, true, events, mk::Sequencer::kMaxEvents) == 0,
-           "stopped sequencer emits nothing");
+    // Depth 0 must not attenuate anything even on closed steps.
+    mk::TranceGate gentle;
+    gentle.prepare (48000.0);
+    gentle.setPattern (0x0000);          // every step closed
+    gentle.setParameters (true, 1, 0.0f, 0.0f, 120.0);
+    std::vector<float> gentleL (4800, 1.0f), gentleR (4800, 1.0f);
+    gentle.process (gentleL.data(), gentleR.data(), (int) gentleL.size());
+    check (gentleL[4799] > 0.999f, "depth zero leaves the signal alone");
 }
 
 void testIdleSilenceForEveryPreset()
@@ -383,13 +377,13 @@ int main()
     testMonoAndGlide();
     testMatrixAndMacros();
     testPresets();
-    testSequencer();
+    testTranceGate();
     testIdleSilenceForEveryPreset();
     testReleaseTailEnds();
     reportMemory();
 
     if (failures == 0)
-        std::printf ("PASS: engine, tuning, wobble, filters, voices, presets, sequencer\n");
+        std::printf ("PASS: engine, tuning, wobble, filters, voices, presets, gate\n");
     else
         std::printf ("%d failure(s)\n", failures);
 

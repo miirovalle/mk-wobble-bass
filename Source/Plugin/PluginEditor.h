@@ -1,21 +1,19 @@
 #pragma once
 
-// One screen, no knobs:
-//   left  - live waveform + the piano roll sequencer
-//   right - wobble curve, wobble-target tiles, three LFO slots, filter/growl pads
-// The ADVANCED drawer holds every remaining parameter as slim bars.
+// Two tabs, one tool each:
+//   WOBBLE - draw the wobble shape, then shape it with three knobs
+//   GATE   - a sixteen-step trance gate
+// The output waveform sits under the header on both tabs.
 
 #include "Plugin/PluginProcessor.h"
 #include "UI/GraphControls.h"
 #include "UI/Pages.h"
-#include "UI/PianoRoll.h"
 #include "UI/PresetBrowser.h"
 #include "UI/Theme.h"
 
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <juce_gui_extra/juce_gui_extra.h>
 
-#include <array>
 #include <memory>
 
 namespace mk
@@ -34,9 +32,9 @@ public:
 private:
     void timerCallback() override;
     void updateHeader();
+    void showTab (int index);
     void openBrowser();
     void closeBrowser();
-    void showAdvanced (bool shouldShow);
 
     int keyboardHeight() const;
 
@@ -49,24 +47,18 @@ private:
     juce::TextButton previousButton { "<" };
     juce::TextButton nextButton { ">" };
     juce::TextButton browserButton { "PRESETS" };
-    juce::TextButton advancedButton { "ADVANCED" };
+    juce::TextButton wobbleTab { "WOBBLE" };
+    juce::TextButton gateTab { "GATE" };
     LevelMeter meter;
 
     WaveScope scope;
-    PianoRoll pianoRoll;
-    WobblePanel wobblePanel;
-    WobbleTargets wobbleTargets;
-    std::array<std::unique_ptr<LfoSlot>, 3> lfoSlots;
-    FilterPad filterPad;
-    GrowlPad growlPad;
-
-    juce::Viewport advancedViewport;
-    std::unique_ptr<AdvancedPage> advancedPage;
-    bool advancedVisible = false;
+    WobblePage wobblePage;
+    GatePage gatePage;
 
     std::unique_ptr<PresetBrowser> browser;
-
     juce::MidiKeyboardComponent keyboard;
+
+    int currentTab = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (WobbleAudioProcessorEditor)
 };

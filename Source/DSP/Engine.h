@@ -11,6 +11,7 @@
 #include "DSP/Lfo.h"
 #include "DSP/ParamStore.h"
 #include "DSP/Params.h"
+#include "DSP/TranceGate.h"
 #include "DSP/Voice.h"
 
 #include <atomic>
@@ -60,6 +61,15 @@ public:
     float filterDisplay() const noexcept { return filterDisplayValue.load (std::memory_order_relaxed); }
     float lastBlockMs() const noexcept { return lastBlockMsValue; }
 
+    // Drawable wobble shape (message thread writes, audio thread reads).
+    static constexpr int kWobblePoints = WobbleEngine::kCustomPoints;
+    void setWobblePoint (int index, float value) noexcept { wobble.setCustomPoint (index, value); }
+    float wobblePoint (int index) const noexcept { return wobble.customPoint (index); }
+
+    // Trance gate pattern (message thread writes, audio thread reads).
+    TranceGate& tranceGate() noexcept { return gate; }
+    const TranceGate& tranceGate() const noexcept { return gate; }
+
     void copyScope (float* destination, int count) const noexcept;
     void copyWobbleTrace (float* destination, int count) const noexcept;
 
@@ -93,6 +103,7 @@ private:
     WobbleEngine wobble;
     MasterEffects effects;
     ParamStore store;
+    TranceGate gate;
 
     VoiceParams voiceParams;
     ParamSnapshot workingParams;
