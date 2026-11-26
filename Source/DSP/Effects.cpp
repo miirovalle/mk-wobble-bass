@@ -30,6 +30,8 @@ void MasterEffects::prepare (double sampleRate, bool ecoMode)
 
     xoverCoeffLo = 1.0f - std::exp (-kTwoPi * 120.0f / (float) sr);
     xoverCoeffHi = 1.0f - std::exp (-kTwoPi * 3000.0f / (float) sr);
+    ottAttackCoeff = 1.0f - std::exp (-1.0f / (0.0015f * (float) sr));
+    ottReleaseCoeff = 1.0f - std::exp (-1.0f / (0.08f * (float) sr));
 
     reset();
 }
@@ -60,6 +62,9 @@ void MasterEffects::reset()
     reverbLp[0] = reverbLp[1] = 0.0f;
     compEnv = 0.0f;
     bandLow[0] = bandLow[1] = bandHigh[0] = bandHigh[1] = 0.0f;
+    ottLow[0] = ottLow[1] = ottHigh[0] = ottHigh[1] = 0.0f;
+    for (auto& band : ottEnv)
+        band[0] = band[1] = 0.0f;
     dcState[0] = dcState[1] = 0.0f;
 }
 
@@ -84,6 +89,8 @@ void MasterEffects::process (float* left, float* right, int numSamples) noexcept
         processReverb (left, right, numSamples);
     if (settings.multibandOn && settings.multibandMix > 0.0005f)
         processMultiband (left, right, numSamples);
+    if (settings.ottOn && settings.ottMix > 0.0005f)
+        processOtt (left, right, numSamples);
     if (settings.compressorOn)
         processCompressor (left, right, numSamples);
 }
@@ -398,6 +405,52 @@ void MasterEffects::processMultiband (float* l, float* r, int n) noexcept
                                + fastTanh (high * drive * 1.3f) * (1.0f / (1.0f + 0.6f * drive));
 
             sample += (shaped - sample) * mix;
+            sample = flushDenormal (sample);
+        }
+    }
+}
+
+void MasterEffects::processOtt (float* l, float* r, int n) noexcept
+{
+    // OTT-style: split into three bands and compress both above and below the
+    // threshold, so quiet detail is pushed up while the peaks are held back.
+    // The gain curve is a square root, which is cheap enough for the audio
+    // thread and gives roughly 2:1 in both directions.
+    const float amount = clampf (settings.ottAmount, 0.0f, 1.0f);
+    const float mix = clampf (settings.ottMix, 0.0f, 1.0f);
+    const float threshold = 0.18f;
+    const float makeup = 1.0f + amount * 0.7f;
+
+    for (int i = 0; i < n; ++i)
+    {
+        for (int ch = 0; ch < 2; ++ch)
+        {
+            float& sample = ch == 0 ? l[i] : r[i];
+
+            ottLow[ch] += (sample - ottLow[ch]) * xoverCoeffLo;
+            const float low = ottLow[ch];
+            ottHigh[ch] += (sample - ottHigh[ch]) * xoverCoeffHi;
+            const float high = sample - ottHigh[ch];
+            const float mid = ottHigh[ch] - low;
+
+            const float bands[3] = { low, mid, high };
+            float wet = 0.0f;
+
+            for (int band = 0; band < 3; ++band)
+            {
+                const float x = bands[(size_t) band];
+                float& env = ottEnv[(size_t) band][ch];
+                const float magnitude = std::fabs (x);
+                const float coeff = magnitude > env ? ottAttackCoeff : ottReleaseCoeff;
+                env += (magnitude - env) * coeff;
+
+                float gain = std::sqrt (threshold / std::max (env, 1.0e-5f));
+                gain = clampf (1.0f + (gain - 1.0f) * amount, 0.2f, 8.0f);
+                wet += x * gain;
+            }
+
+            wet *= makeup;
+            sample += (wet - sample) * mix;
             sample = flushDenormal (sample);
         }
     }

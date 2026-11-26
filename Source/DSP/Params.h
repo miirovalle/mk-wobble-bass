@@ -28,6 +28,7 @@ namespace mk
     E(Fx)                                                                                         \
     E(Gate)                                                                                       \
     E(Mac)                                                                                        \
+    E(Easy)                                                                                       \
     E(Mat)                                                                                        \
     E(Misc)
 
@@ -112,6 +113,7 @@ using U = Unit;
     X(flt2Cutoff,   Filt, 20.0f,   18000.0f, 1400.0f, Hz)                                          \
     X(flt2Reso,     Filt, 0.0f,    1.0f,     0.1f,   Pct)                                          \
     X(fltFormant,   Filt, 0.0f,    4.0f,     0.0f,   Raw)   /* A E I O U */                        \
+    X(formantMix,   Filt, 0.0f,    1.0f,     0.0f,   Pct)   /* parallel talking resonator */       \
                                                                                                    \
     X(wobMode,      Wob,  0.0f,    1.0f,     1.0f,   Raw)   /* Sync / Free */                      \
     X(wobDiv,       Wob,  0.0f,    15.0f,    2.0f,   Raw)                                          \
@@ -193,7 +195,7 @@ using U = Unit;
     X(distMix,      Dist, 0.0f,    1.0f,     0.5f,   Pct)                                          \
     X(distOut,      Dist, -24.0f,  6.0f,     0.0f,   Db)                                           \
     X(distPre,      Dist, 0.0f,    1.0f,     0.0f,   Raw)   /* 0 = post filter, 1 = pre */         \
-    X(distRoute,    Dist, 0.0f,    2.0f,     0.0f,   Raw)   /* Off / Serial / Parallel */          \
+    X(distRoute,    Dist, 0.0f,    2.0f,     1.0f,   Raw)   /* Off / Serial / Parallel */          \
                                                                                                    \
     X(chOn,         Fx,   0.0f,    1.0f,     0.0f,   Raw)                                          \
     X(chRate,       Fx,   0.02f,   8.0f,     0.6f,   Hz)                                           \
@@ -235,15 +237,23 @@ using U = Unit;
     X(mbOn,         Fx,   0.0f,    1.0f,     0.0f,   Raw)                                          \
     X(mbDrive,      Fx,   0.0f,    1.0f,     0.3f,   Pct)                                          \
     X(mbMix,        Fx,   0.0f,    1.0f,     0.5f,   Pct)                                          \
+    X(ottOn,        Fx,   0.0f,    1.0f,     0.0f,   Raw)   /* OTT-style band compressor */        \
+    X(ottAmount,    Fx,   0.0f,    1.0f,     0.7f,   Pct)                                          \
+    X(ottMix,       Fx,   0.0f,    1.0f,     1.0f,   Pct)                                          \
                                                                                                    \
-    X(macBass,      Mac,  0.0f,    1.0f,     0.0f,   Pct)                                          \
-    X(macGrowl,     Mac,  0.0f,    1.0f,     0.0f,   Pct)                                          \
-    X(macMovement,  Mac,  0.0f,    1.0f,     0.0f,   Pct)                                          \
-    X(macDrive,     Mac,  0.0f,    1.0f,     0.0f,   Pct)                                          \
-    X(macFilter,    Mac,  0.0f,    1.0f,     0.0f,   Pct)                                          \
-    X(macSub,       Mac,  0.0f,    1.0f,     0.0f,   Pct)                                          \
-    X(macWidth,     Mac,  0.0f,    1.0f,     0.0f,   Pct)                                          \
-    X(macMix,       Mac,  0.0f,    1.0f,     0.0f,   Pct)                                          \
+    X(easyWobble,   Mac,  0.0f,    1.0f,     0.5f,   Pct)   /* 0.5 = no offset */                  \
+    X(easyBass,     Mac,  0.0f,    1.0f,     0.5f,   Pct)                                          \
+    X(easyGrowl,    Mac,  0.0f,    1.0f,     0.5f,   Pct)                                          \
+    X(easyGrit,     Mac,  0.0f,    1.0f,     0.5f,   Pct)                                          \
+    X(easyMovement, Mac,  0.0f,    1.0f,     0.5f,   Pct)                                          \
+    X(easyWidth,    Mac,  0.0f,    1.0f,     0.5f,   Pct)                                          \
+    X(macro7,       Mac,  0.0f,    1.0f,     0.0f,   Pct)                                          \
+    X(macro8,       Mac,  0.0f,    1.0f,     0.0f,   Pct)                                          \
+                                                                                                   \
+    X(bassChar,     Easy, 0.0f,    5.0f,     0.0f,   Raw)   /* Wobble Growl Reese Neuro ... */     \
+    X(morphChar,    Easy, 0.0f,    5.0f,     2.0f,   Raw)   /* character the morph knob reaches */  \
+    X(bassMorph,    Easy, 0.0f,    1.0f,     0.0f,   Pct)                                          \
+    X(subLock,      Easy, 0.0f,    1.0f,     1.0f,   Raw)   /* sub bypasses filter + distortion */  \
                                                                                                    \
     X(mat1Src,      Mat,  0.0f,    21.0f,    0.0f,   Raw)                                          \
     X(mat1Dst,      Mat,  0.0f,    20.0f,    0.0f,   Raw)                                          \
@@ -346,6 +356,15 @@ enum WobbleShape : int
     ShapePulse, ShapeRamp, ShapeRandom, ShapeSampleHold, ShapeCustom
 };
 
+// The six EASY-page bass characters. Each one shapes the patch on top of the
+// preset: WOBBLE leaves it alone, the others push it towards a sound.
+enum BassCharacter : int
+{
+    CharWobble = 0, CharGrowl, CharReese, CharNeuro, CharScream, CharTalking, kCharacterCount
+};
+
+constexpr float kBassCharacterDefaultMorph = 0.0f;
+
 enum LfoShape : int
 {
     LfoSine = 0, LfoTriangle, LfoSawDown, LfoSawUp, LfoSquare, LfoRandom,
@@ -383,11 +402,11 @@ enum ModDest : int
     DstNone = 0, DstPitch, DstCutoff, DstReso, DstWtPos1, DstWtPos2, DstWtPos3,
     DstFm, DstPw, DstDrive, DstWidth, DstSubLevel, DstRing, DstFormant,
     DstOsc2Pitch, DstLfoDepth, DstFxMix, DstDistMix, DstDelayMix, DstRevMix, DstChorusMix,
-    DstOsc1Level, DstOsc2Level, DstOsc3Level
+    DstOsc1Level, DstOsc2Level, DstOsc3Level, DstOsc1Phase
 };
 
 constexpr int kModSourceCount = 23;
-constexpr int kModDestCount = 24;
+constexpr int kModDestCount = 25;
 
 // Pitch that the engine reaches at full scale; ranges mirror the mod matrix UI.
 constexpr float kCutoffModSemitones = 60.0f;

@@ -40,6 +40,9 @@ struct EffectSettings
     bool multibandOn = false;
     float multibandDrive = 0.3f, multibandMix = 0.5f;
 
+    bool ottOn = false;
+    float ottAmount = 0.7f, ottMix = 1.0f;
+
     // Modulated by the wobble LFO when routed there.
     float wobbleValue = 0.0f;
 };
@@ -73,6 +76,7 @@ private:
     void processReverb (float* l, float* r, int n) noexcept;
     void processCompressor (float* l, float* r, int n) noexcept;
     void processMultiband (float* l, float* r, int n) noexcept;
+    void processOtt (float* l, float* r, int n) noexcept;
 
     double sr = 48000.0;
     EffectSettings settings;
@@ -110,6 +114,11 @@ private:
     // Multiband crossover state.
     float bandLow[2] {}, bandHigh[2] {};
     float xoverCoeffLo = 0.0f, xoverCoeffHi = 0.0f;
+
+    // OTT-style band compressor: three bands, fast attack, slow release.
+    float ottLow[2] {}, ottHigh[2] {};
+    float ottEnv[3][2] {};
+    float ottAttackCoeff = 0.0f, ottReleaseCoeff = 0.0f;
 
     float dcState[2] {};
 };

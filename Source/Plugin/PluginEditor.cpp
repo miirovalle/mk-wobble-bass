@@ -7,15 +7,15 @@ WobbleAudioProcessorEditor::WobbleAudioProcessorEditor (WobbleAudioProcessor& pr
     : AudioProcessorEditor (processorToUse),
       processor (processorToUse),
       scope (processorToUse.engine),
-      wobblePage (processorToUse.apvts, processorToUse.engine),
-      gatePage (processorToUse.apvts, processorToUse.engine),
-      lfoPage (processorToUse.apvts),
+      meter (processorToUse.engine),
+      easyPage (processorToUse.apvts, processorToUse.engine),
+      advancedPage (processorToUse.apvts, processorToUse.engine),
       keyboard (processorToUse.keyboardState, juce::MidiKeyboardComponent::horizontalKeyboard)
 {
     setLookAndFeel (&lookAndFeel);
 
-    titleLabel.setText ("MK / WOBBLE BASS", juce::dontSendNotification);
-    titleLabel.setFont (theme::labelFont (19.0f));
+    titleLabel.setText ("WOBBLE MACHINE", juce::dontSendNotification);
+    titleLabel.setFont (theme::labelFont (21.0f));
     titleLabel.setColour (juce::Label::textColourId, theme::text());
     addAndMakeVisible (titleLabel);
 
@@ -24,13 +24,21 @@ WobbleAudioProcessorEditor::WobbleAudioProcessorEditor (WobbleAudioProcessor& pr
     presetLabel.setJustificationType (juce::Justification::centredRight);
     addAndMakeVisible (presetLabel);
 
+    randomButton.setColour (juce::TextButton::textColourOffId, theme::text());
+    randomButton.onClick = [this]
+    {
+        processor.randomize();
+        presetLabel.setText (processor.presets.currentName(), juce::dontSendNotification);
+    };
+    addAndMakeVisible (randomButton);
+
     browserButton.setColour (juce::TextButton::textColourOffId, theme::text());
     browserButton.onClick = [this] { openBrowser(); };
     addAndMakeVisible (browserButton);
 
-    for (int i = 0; i < 3; ++i)
+    for (int i = 0; i < 2; ++i)
     {
-        auto& tab = i == 0 ? wobbleTab : (i == 1 ? gateTab : lfoTab);
+        auto& tab = i == 0 ? easyTab : advancedTab;
         tab.setClickingTogglesState (true);
         tab.setRadioGroupId (9001);
         tab.setColour (juce::TextButton::buttonOnColourId, theme::accentDeep());
@@ -38,17 +46,17 @@ WobbleAudioProcessorEditor::WobbleAudioProcessorEditor (WobbleAudioProcessor& pr
         addAndMakeVisible (tab);
     }
 
+    addAndMakeVisible (meter);
     addAndMakeVisible (scope);
-    addChildComponent (wobblePage);
-    addChildComponent (gatePage);
-    addChildComponent (lfoPage);
+    addChildComponent (easyPage);
+    addChildComponent (advancedPage);
 
     keyboard.setAvailableRange (0, 60);   // sub-bass to C4: the instrument's range
     keyboard.setWantsKeyboardFocus (true);
     keyboard.setMouseClickGrabsKeyboardFocus (true);
     keyboard.setScrollButtonsVisible (false);
-    keyboard.setColour (juce::MidiKeyboardComponent::whiteNoteColourId, juce::Colour (0xffd9d2ea));
-    keyboard.setColour (juce::MidiKeyboardComponent::blackNoteColourId, juce::Colour (0xff14101d));
+    keyboard.setColour (juce::MidiKeyboardComponent::whiteNoteColourId, juce::Colour (0xffddd5cb));
+    keyboard.setColour (juce::MidiKeyboardComponent::blackNoteColourId, juce::Colour (0xff141210));
     keyboard.setColour (juce::MidiKeyboardComponent::keySeparatorLineColourId, theme::outline());
     keyboard.setColour (juce::MidiKeyboardComponent::shadowColourId, juce::Colours::transparentBlack);
     keyboard.setColour (juce::MidiKeyboardComponent::mouseOverKeyOverlayColourId,
@@ -59,13 +67,13 @@ WobbleAudioProcessorEditor::WobbleAudioProcessorEditor (WobbleAudioProcessor& pr
     addAndMakeVisible (keyboard);
 
     setResizable (true, true);
-    setResizeLimits (760, 520, 1600, 1000);
-    setSize (980, 660);
+    setResizeLimits (900, 600, 1680, 1040);
+    setSize (1120, 730);
 
     presetLabel.setText (processor.presets.currentName(), juce::dontSendNotification);
 
     showTab (0);
-    startTimerHz (4);
+    startTimerHz (6);
 }
 
 WobbleAudioProcessorEditor::~WobbleAudioProcessorEditor()
@@ -77,27 +85,45 @@ WobbleAudioProcessorEditor::~WobbleAudioProcessorEditor()
 
 int WobbleAudioProcessorEditor::keyboardHeight() const
 {
-    return juce::jlimit (38, 56, getHeight() / 14);
+    return juce::jlimit (38, 58, getHeight() / 16);
+}
+
+int WobbleAudioProcessorEditor::headerHeight() const
+{
+    return 54;
 }
 
 void WobbleAudioProcessorEditor::paint (juce::Graphics& g)
 {
     g.fillAll (theme::background());
 
-    juce::ColourGradient glow (theme::accentDeep().withAlpha (0.16f), 0.0f, 0.0f,
-                               theme::background(), 0.0f, (float) getHeight() * 0.8f, false);
+    juce::ColourGradient glow (theme::accentDeep().withAlpha (0.28f), 0.0f, 0.0f,
+                               theme::background(), 0.0f, (float) getHeight() * 0.7f, false);
     g.setGradientFill (glow);
     g.fillAll();
 
-    auto header = getLocalBounds().removeFromTop (50).toFloat();
-    g.setColour (theme::panel().withAlpha (0.9f));
+    auto header = getLocalBounds().removeFromTop (headerHeight()).toFloat();
+    g.setColour (theme::panel().withAlpha (0.92f));
     g.fillRect (header);
 
-    g.setColour (theme::outline());
-    g.drawHorizontalLine (50, 0.0f, (float) getWidth());
+    g.setColour (theme::textDim().withAlpha (0.85f));
+    g.setFont (theme::labelFont (9.0f));
+    g.drawFittedText ("DUBSTEP BASS SYNTHESIZER", juce::Rectangle<int> (16, 36, 280, 13),
+                      juce::Justification::centredLeft, 1);
+
+    g.setColour (theme::accent().withAlpha (0.7f));
+    g.drawHorizontalLine (headerHeight() - 1, 0.0f, (float) getWidth());
+
+    // Gradient rule under the title: the one piece of glow that also reads on
+    // stage without stealing attention from the knobs.
+    juce::ColourGradient titleGlow (theme::accent().withAlpha (0.9f), 16.0f, (float) headerHeight() - 2,
+                                    theme::accent().withAlpha (0.0f), 300.0f, (float) headerHeight() - 2,
+                                    false);
+    g.setGradientFill (titleGlow);
+    g.fillRect (16.0f, (float) headerHeight() - 2, 284.0f, 2.0f);
 
     auto keys = getLocalBounds().removeFromBottom (keyboardHeight()).toFloat().reduced (6.0f, 2.0f);
-    g.setColour (juce::Colour (0xff0d0a14));
+    g.setColour (juce::Colour (0xff0d0c0b));
     g.fillRoundedRectangle (keys, 8.0f);
     g.setColour (theme::outline());
     g.drawRoundedRectangle (keys, 8.0f, 1.0f);
@@ -107,46 +133,47 @@ void WobbleAudioProcessorEditor::resized()
 {
     auto bounds = getLocalBounds();
 
-    auto header = bounds.removeFromTop (50).reduced (12, 8);
-    titleLabel.setBounds (header.removeFromLeft (210));
-    browserButton.setBounds (header.removeFromRight (92).reduced (0, 2));
-    header.removeFromRight (8);
+    auto header = bounds.removeFromTop (headerHeight()).reduced (14, 8);
+    auto titleArea = header.removeFromLeft (280);
+    titleLabel.setBounds (titleArea.removeFromTop (26));
+    meter.setBounds (header.removeFromLeft (90).reduced (2, 7));
+
+    browserButton.setBounds (header.removeFromRight (92));
+    header.removeFromRight (6);
+    randomButton.setBounds (header.removeFromRight (96));
+    header.removeFromRight (10);
     presetLabel.setBounds (header);
 
     auto keyboardArea = bounds.removeFromBottom (keyboardHeight()).reduced (10, 5);
     keyboard.setKeyWidth (juce::jmax (12.0f, (float) keyboardArea.getWidth() / 36.0f));
     keyboard.setBounds (keyboardArea);
 
-    auto content = bounds.reduced (8, 6);
+    auto content = bounds.reduced (10, 6);
 
-    // The waveform is always visible, on every tab.
-    const int scopeHeight = juce::jlimit (46, 64, content.getHeight() / 9);
+    // The output waveform is always visible.
+    const int scopeHeight = juce::jlimit (48, 66, content.getHeight() / 10);
     scope.setBounds (content.removeFromTop (scopeHeight));
     content.removeFromTop (6);
 
     auto tabs = content.removeFromTop (28);
-    wobbleTab.setBounds (tabs.removeFromLeft (100).reduced (0, 1));
+    easyTab.setBounds (tabs.removeFromLeft (120).reduced (0, 1));
     tabs.removeFromLeft (6);
-    gateTab.setBounds (tabs.removeFromLeft (100).reduced (0, 1));
-    tabs.removeFromLeft (6);
-    lfoTab.setBounds (tabs.removeFromLeft (100).reduced (0, 1));    content.removeFromTop (6);
+    advancedTab.setBounds (tabs.removeFromLeft (150).reduced (0, 1));
+    content.removeFromTop (8);
 
-    wobblePage.setBounds (content);
-    gatePage.setBounds (content);
-    lfoPage.setBounds (content);
+    easyPage.setBounds (content);
+    advancedPage.setBounds (content);
 }
 
 void WobbleAudioProcessorEditor::showTab (int index)
 {
-    currentTab = juce::jlimit (0, 2, index);
+    currentTab = juce::jlimit (0, 1, index);
 
-    wobbleTab.setToggleState (currentTab == 0, juce::dontSendNotification);
-    gateTab.setToggleState (currentTab == 1, juce::dontSendNotification);
-    lfoTab.setToggleState (currentTab == 2, juce::dontSendNotification);
+    easyTab.setToggleState (currentTab == 0, juce::dontSendNotification);
+    advancedTab.setToggleState (currentTab == 1, juce::dontSendNotification);
 
-    wobblePage.setVisible (currentTab == 0);
-    gatePage.setVisible (currentTab == 1);
-    lfoPage.setVisible (currentTab == 2);
+    easyPage.setVisible (currentTab == 0);
+    advancedPage.setVisible (currentTab == 1);
 }
 
 void WobbleAudioProcessorEditor::openBrowser()
@@ -178,7 +205,7 @@ void WobbleAudioProcessorEditor::closeBrowser()
 void WobbleAudioProcessorEditor::timerCallback()
 {
     presetLabel.setText (processor.presets.currentName(), juce::dontSendNotification);
-    gatePage.refresh();
+    advancedPage.refresh();
 
     if (browser != nullptr)
         browser->setBounds (getLocalBounds());

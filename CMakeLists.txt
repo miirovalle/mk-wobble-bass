@@ -107,11 +107,11 @@ if (MK_BUILD_PLUGIN)
 
     juce_add_plugin(MKWobbleBass
         COMPANY_NAME "MK Audio"
-        BUNDLE_ID "audio.mk.wobblebass"
+        BUNDLE_ID "audio.mk.wobblemachine"
         PLUGIN_MANUFACTURER_CODE Mkau
         PLUGIN_CODE Mkwb
-        PRODUCT_NAME "MK WOBBLE BASS"
-        DESCRIPTION "Wobble bass synthesizer"
+        PRODUCT_NAME "WOBBLE MACHINE"
+        DESCRIPTION "Dubstep bass synthesizer"
         IS_SYNTH TRUE
         NEEDS_MIDI_INPUT TRUE
         NEEDS_MIDI_OUTPUT FALSE
@@ -135,7 +135,8 @@ if (MK_BUILD_PLUGIN)
         Source/UI/GraphControls.cpp
         Source/UI/GatePattern.cpp
         Source/UI/PresetBrowser.cpp
-        Source/UI/Pages.cpp)
+        Source/UI/Pages.cpp
+        Source/UI/MainPages.cpp)
     target_include_directories(MKWobbleBass PRIVATE Source)
 
     set(MK_PLUGIN_SOURCES
@@ -145,7 +146,8 @@ if (MK_BUILD_PLUGIN)
         Source/UI/GraphControls.cpp
         Source/UI/GatePattern.cpp
         Source/UI/PresetBrowser.cpp
-        Source/UI/Pages.cpp)
+        Source/UI/Pages.cpp
+        Source/UI/MainPages.cpp)
 
     # Parameter ids are stable and the build has no VST2 predecessor, so the
     # VST2 migration guard is unnecessary; MIDI CC emulation parameters would
@@ -177,7 +179,7 @@ if (MK_BUILD_PLUGIN)
             XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2"
             XCODE_ATTRIBUTE_CODE_SIGN_STYLE Automatic)
     else()
-        juce_add_console_app(MKPluginSmokeTest PRODUCT_NAME "MK Wobble Bass Smoke Test")
+        juce_add_console_app(MKPluginSmokeTest PRODUCT_NAME "Wobble Machine Smoke Test")
         target_sources(MKPluginSmokeTest PRIVATE Tools/PluginSmokeTest.cpp ${MK_PLUGIN_SOURCES})
         target_include_directories(MKPluginSmokeTest PRIVATE Source)
         target_compile_definitions(MKPluginSmokeTest PRIVATE
@@ -188,7 +190,7 @@ if (MK_BUILD_PLUGIN)
         PUBLIC juce::juce_recommended_config_flags)
 
         # Off-screen renderer for the App Store / documentation assets.
-        juce_add_console_app(MKThumbnail PRODUCT_NAME "MK Wobble Bass Thumbnail")
+        juce_add_console_app(MKThumbnail PRODUCT_NAME "Wobble Machine Thumbnail")
         target_sources(MKThumbnail PRIVATE Tools/MakeThumbnail.cpp ${MK_PLUGIN_SOURCES})
         target_include_directories(MKThumbnail PRIVATE Source)
         target_compile_definitions(MKThumbnail PRIVATE JUCE_VST3_CAN_REPLACE_VST2=0)

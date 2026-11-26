@@ -18,12 +18,12 @@ from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 ROOT = Path(__file__).resolve().parent.parent
 ASSETS = ROOT / "Assets"
 
-TOP = (18, 10, 38)
-BOTTOM = (44, 18, 82)
-ACCENT = (168, 85, 247)
-ACCENT_BRIGHT = (200, 139, 251)
-TEXT = (237, 233, 247)
-TEXT_DIM = (150, 140, 175)
+TOP = (10, 9, 8)
+BOTTOM = (46, 22, 8)
+ACCENT = (255, 122, 24)
+ACCENT_BRIGHT = (255, 164, 81)
+TEXT = (244, 239, 233)
+TEXT_DIM = (160, 150, 140)
 
 FONT_BOLD = "C:/Windows/Fonts/seguisb.ttf"
 FONT_REGULAR = "C:/Windows/Fonts/segoeui.ttf"
@@ -47,7 +47,7 @@ def background(width: int, height: int) -> Image.Image:
             fill=tuple(int(TOP[i] + (BOTTOM[i] - TOP[i]) * t) for i in range(3)),
         )
 
-    # Soft purple bloom behind the product shot.
+    # Soft orange bloom behind the product shot.
     glow = Image.new("RGB", (width, height), (0, 0, 0))
     gd = ImageDraw.Draw(glow)
     cx, cy = width // 2, int(height * 0.56)
@@ -97,23 +97,23 @@ def square_thumbnail(size: int = 1024) -> Image.Image:
     icon = Image.open(ASSETS / "AppIcon-1024.png").convert("RGB")
     icon_size = int(size * 0.13)
     icon = rounded(icon.resize((icon_size, icon_size), Image.LANCZOS), int(icon_size * 0.22),
-                   border=(60, 40, 96))
+                   border=(64, 42, 24))
     base.alpha_composite(icon, (int(size * 0.065), int(size * 0.055)))
 
     draw = ImageDraw.Draw(base)
     text_x = int(size * 0.065) + icon_size + int(size * 0.035)
-    draw.text((text_x, int(size * 0.062)), "MK WOBBLE BASS", font=font(int(size * 0.062), True),
+    draw.text((text_x, int(size * 0.062)), "WOBBLE MACHINE", font=font(int(size * 0.062), True),
               fill=TEXT)
-    draw.text((text_x, int(size * 0.132)), "Wobble bass synthesizer  ·  AUv3 + VST3",
+    draw.text((text_x, int(size * 0.132)), "Dubstep bass synthesizer  ·  AUv3 + VST3",
               font=font(int(size * 0.031)), fill=TEXT_DIM)
 
     ui = load_ui(int(size * 0.9))
-    frame = rounded(ui, int(size * 0.022), border=(70, 48, 112))
+    frame = rounded(ui, int(size * 0.022), border=(74, 48, 26))
     position = ((size - frame.size[0]) // 2, int(size * 0.235))
     with_shadow(base, frame, position, blur=int(size * 0.02), opacity=150)
 
     # Feature strip.
-    features = ["56 presets", "tempo-synced wobble", "FM growl", "iPad AUv3"]
+    features = ["62 presets", "smart wobble", "6 bass characters", "iPad AUv3"]
     y = position[1] + frame.size[1] + int(size * 0.045)
     pill_font = font(int(size * 0.026), True)
     total = 0
@@ -127,8 +127,8 @@ def square_thumbnail(size: int = 1024) -> Image.Image:
     x = (size - total) // 2
     for label, width in zip(features, widths):
         draw.rounded_rectangle([x, y, x + width, y + int(size * 0.052)],
-                               radius=int(size * 0.026), fill=(38, 24, 64),
-                               outline=(78, 54, 122))
+                               radius=int(size * 0.026), fill=(40, 26, 14),
+                               outline=(88, 56, 24))
         box = draw.textbbox((0, 0), label, font=pill_font)
         draw.text((x + (width - (box[2] - box[0])) / 2, y + int(size * 0.011)), label,
                   font=pill_font, fill=ACCENT_BRIGHT)
@@ -143,20 +143,20 @@ def landscape_screenshot(width: int = 2732, height: int = 2048) -> Image.Image:
     icon_size = int(height * 0.075)
     icon = Image.open(ASSETS / "AppIcon-1024.png").convert("RGB")
     icon = rounded(icon.resize((icon_size, icon_size), Image.LANCZOS), int(icon_size * 0.22),
-                   border=(60, 40, 96))
+                   border=(64, 42, 24))
     margin = int(width * 0.045)
     base.alpha_composite(icon, (margin, int(height * 0.045)))
 
     draw = ImageDraw.Draw(base)
     text_x = margin + icon_size + int(width * 0.018)
-    draw.text((text_x, int(height * 0.048)), "MK WOBBLE BASS", font=font(int(height * 0.052), True),
+    draw.text((text_x, int(height * 0.048)), "WOBBLE MACHINE", font=font(int(height * 0.052), True),
               fill=TEXT)
     draw.text((text_x, int(height * 0.112)),
-              "Wobble, growl and neuro bass for iPad (AUv3) and desktop (VST3)",
+              "Wobble, growl, neuro and talking bass for iPad (AUv3) and desktop (VST3)",
               font=font(int(height * 0.024)), fill=TEXT_DIM)
 
     ui = load_ui(int(width * 0.9))
-    frame = rounded(ui, int(width * 0.011), border=(70, 48, 112))
+    frame = rounded(ui, int(width * 0.011), border=(74, 48, 26))
     position = ((width - frame.size[0]) // 2, int(height * 0.19))
     with_shadow(base, frame, position, blur=int(width * 0.008), opacity=150)
 

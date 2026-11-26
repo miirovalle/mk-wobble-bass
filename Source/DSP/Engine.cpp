@@ -12,63 +12,166 @@ inline float cutoffSemisFromHz (float hz) noexcept
     return 12.0f * std::log2 (std::max (hz, 20.0f) / 20.0f);
 }
 
-// Macro offsets are applied to the smoothed snapshot copy every control block.
-// Keeping them here (rather than in the matrix) means the eight macros always do
-// something musical, while the matrix stays free for user routing.
-void applyMacros (ParamSnapshot& p) noexcept
+// The EASY page is six bipolar macros: 0.5 in the parameter is "no offset", so
+// the centre of every knob leaves the advanced patch exactly as authored.
+inline float bipolar (float value) noexcept
 {
-    const float bass = p[P::macBass];
-    const float growl = p[P::macGrowl];
-    const float movement = p[P::macMovement];
-    const float drive = p[P::macDrive];
-    const float filter = p[P::macFilter];
-    const float sub = p[P::macSub];
-    const float width = p[P::macWidth];
-    const float mix = p[P::macMix];
+    return (value - 0.5f) * 2.0f;
+}
 
-    if (bass > 0.0001f)
+// A character is a tone skeleton layered under the EASY macros. Only the
+// continuous shaping is applied here; discrete choices made in ADVANCED are
+// respected, and distortion is switched on only when the patch has none.
+struct CharacterProfile
+{
+    float cutoffOct, reso, detune, spread, fm, osc2Level, wtPos, formantMix;
+    float drive, distMix, sub, tone;
+    float wobCut, wobFm, wobWt, wobPitch, wobFormant;
+    int distType;
+};
+
+const CharacterProfile& characterProfile (int character) noexcept
+{
+    static const CharacterProfile profiles[kCharacterCount] = {
+        // WOBBLE: the classic, leaves the patch alone but adds a little swing
+        {  0.00f, 0.06f,  4.0f, 0.05f, 0.00f, 0.00f, 0.05f, 0.00f,
+           0.02f, 0.03f, 0.05f,  0.00f,  0.12f, 0.10f, 0.10f, 0.00f, 0.00f, -1 },
+        // GROWL: FM body, vowel movement and tube grit
+        { -0.35f, 0.18f, 10.0f, 0.10f, 0.35f, 0.15f, 0.05f, 0.15f,
+           0.18f, 0.12f, 0.02f, -0.10f,  0.05f, 0.35f, 0.00f, 0.00f, 0.50f, DistTube },
+        // REESE: wide detuned saw stack, barely wobbling
+        { -0.55f, 0.02f, 30.0f, 0.30f, 0.00f, 0.10f, 0.00f, 0.00f,
+           0.05f, 0.05f, 0.12f,  0.00f, -0.15f, 0.00f, 0.00f, 0.00f, 0.00f, -1 },
+        // NEURO: wavetable motion, wavefolded and resonant
+        { -0.15f, 0.32f, 14.0f, 0.20f, 0.20f, 0.12f, 0.30f, 0.10f,
+           0.22f, 0.20f, 0.05f,  0.15f,  0.18f, 0.20f, 0.35f, 0.10f, 0.30f, DistWavefold },
+        // SCREAM: bright, hard-clipped screech with pitch wobble
+        {  0.80f, 0.40f, 18.0f, 0.15f, 0.30f, 0.08f, 0.20f, 0.15f,
+           0.32f, 0.30f, 0.00f,  0.30f,  0.25f, 0.20f, 0.10f, 0.30f, 0.40f, DistHardClip },
+        // TALKING: parallel vowel resonator driven by the wobble
+        { -0.20f, 0.15f,  6.0f, 0.10f, 0.10f, 0.05f, 0.15f, 0.85f,
+           0.08f, 0.05f, 0.08f,  0.05f,  0.15f, 0.15f, 0.10f, 0.00f, 0.60f, -1 },
+    };
+
+    return profiles[clampValue (character, 0, kCharacterCount - 1)];
+}
+
+void applyCharacter (ParamSnapshot& p) noexcept
+{
+    const int a = clampValue ((int) p[P::bassChar], 0, kCharacterCount - 1);
+    const int b = clampValue ((int) p[P::morphChar], 0, kCharacterCount - 1);
+    const float morph = clampf (p[P::bassMorph], 0.0f, 1.0f);
+
+    const auto& ca = characterProfile (a);
+    const auto& cb = characterProfile (b);
+
+    const float wa = 1.0f - morph;
+    const float wb = morph;
+
+    auto blend = [wa, wb] (float va, float vb) noexcept { return va * wa + vb * wb; };
+
+    p[P::fltCutoff] = clampf (p[P::fltCutoff] * std::exp2 (blend (ca.cutoffOct, cb.cutoffOct)),
+                              20.0f, 18000.0f);
+    p[P::fltReso] = clampf (p[P::fltReso] + blend (ca.reso, cb.reso), 0.0f, 1.0f);
+    p[P::osc1Detune] = clampf (p[P::osc1Detune] + blend (ca.detune, cb.detune), 0.0f, 60.0f);
+    p[P::osc1Spread] = clampf (p[P::osc1Spread] + blend (ca.spread, cb.spread), 0.0f, 1.0f);
+    p[P::osc2Fm] = clampf (p[P::osc2Fm] + blend (ca.fm, cb.fm), 0.0f, 1.0f);
+    p[P::osc2Level] = clampf (p[P::osc2Level] + blend (ca.osc2Level, cb.osc2Level), 0.0f, 1.0f);
+    p[P::osc1Pos] = clampf (p[P::osc1Pos] + blend (ca.wtPos, cb.wtPos), 0.0f, 1.0f);
+    p[P::formantMix] = clampf (p[P::formantMix] + blend (ca.formantMix, cb.formantMix), 0.0f, 1.0f);
+    p[P::distDrive] = clampf (p[P::distDrive] + blend (ca.drive, cb.drive), 0.0f, 1.0f);
+    p[P::distMix] = clampf (p[P::distMix] + blend (ca.distMix, cb.distMix), 0.0f, 1.0f);
+    p[P::distTone] = clampf (p[P::distTone] + blend (ca.tone, cb.tone), -1.0f, 1.0f);
+    p[P::subLevel] = clampf (p[P::subLevel] + blend (ca.sub, cb.sub), 0.0f, 1.0f);
+    p[P::wobCut] = clampf (p[P::wobCut] + blend (ca.wobCut, cb.wobCut), -1.0f, 1.0f);
+    p[P::wobFm] = clampf (p[P::wobFm] + blend (ca.wobFm, cb.wobFm), -1.0f, 1.0f);
+    p[P::wobWt] = clampf (p[P::wobWt] + blend (ca.wobWt, cb.wobWt), -1.0f, 1.0f);
+    p[P::wobPitch] = clampf (p[P::wobPitch] + blend (ca.wobPitch, cb.wobPitch), -1.0f, 1.0f);
+    p[P::wobFormant] = clampf (p[P::wobFormant] + blend (ca.wobFormant, cb.wobFormant), -1.0f, 1.0f);
+
+    // Discrete: the dominant character may switch on FM or a distortion
+    // algorithm, but only when the patch has not already chosen one.
+    const auto& dominant = morph < 0.5f ? ca : cb;
+    if (dominant.fm > 0.01f && (int) p[P::osc2Mode] == 0)
+        p[P::osc2Mode] = 1.0f;
+
+    if (dominant.distType >= 0)
     {
-        p[P::subLevel] = clampf (p[P::subLevel] + bass * 0.35f, 0.0f, 1.0f);
-        p[P::fltCutoff] = clampf (p[P::fltCutoff] * std::exp2 (-bass * 0.25f), 20.0f, 18000.0f);
+        if ((int) p[P::distType] == DistOff)
+            p[P::distType] = (float) dominant.distType;
+        p[P::distRoute] = std::max (p[P::distRoute], 1.0f);
     }
-    if (growl > 0.0001f)
+}
+
+void applyEasyControls (ParamSnapshot& p) noexcept
+{
+    const float wob = bipolar (p[P::easyWobble]);
+    const float bass = bipolar (p[P::easyBass]);
+    const float growl = bipolar (p[P::easyGrowl]);
+    const float grit = bipolar (p[P::easyGrit]);
+    const float movement = bipolar (p[P::easyMovement]);
+    const float width = bipolar (p[P::easyWidth]);
+
+    if (std::fabs (wob) > 0.0001f)
     {
-        p[P::osc2Fm] = clampf (p[P::osc2Fm] + growl * 0.55f, 0.0f, 1.0f);
-        p[P::fltReso] = clampf (p[P::fltReso] + growl * 0.22f, 0.0f, 1.0f);
-        p[P::osc2Level] = clampf (p[P::osc2Level] + growl * 0.3f, 0.0f, 1.0f);
+        p[P::wobDepth] = clampf (p[P::wobDepth] + wob * 0.45f, 0.0f, 1.0f);
+        p[P::wobCut] = clampf (p[P::wobCut] + wob * 0.50f, -1.0f, 1.0f);
+        p[P::wobWt] = clampf (p[P::wobWt] + wob * 0.20f, -1.0f, 1.0f);
+        p[P::wobReso] = clampf (p[P::wobReso] + wob * 0.15f, -1.0f, 1.0f);
     }
-    if (movement > 0.0001f)
+
+    if (std::fabs (bass) > 0.0001f)
     {
-        p[P::wobDepth] = clampf (p[P::wobDepth] + movement * 0.35f, 0.0f, 1.0f);
-        p[P::osc1Pos] = clampf (p[P::osc1Pos] + movement * 0.3f, 0.0f, 1.0f);
-        p[P::fltEnvAmt] = clampf (p[P::fltEnvAmt] + movement * 1.2f, -4.0f, 4.0f);
+        p[P::subLevel] = clampf (p[P::subLevel] + bass * 0.28f, 0.0f, 1.0f);
+        p[P::fltCutoff] = clampf (p[P::fltCutoff] * std::exp2 (-bass * 0.28f), 20.0f, 18000.0f);
+        p[P::distTone] = clampf (p[P::distTone] - bass * 0.20f, -1.0f, 1.0f);
     }
-    if (drive > 0.0001f)
+
+    if (std::fabs (growl) > 0.0001f)
     {
-        p[P::distDrive] = clampf (p[P::distDrive] + drive * 0.45f, 0.0f, 1.0f);
-        p[P::distMix] = clampf (p[P::distMix] + drive * 0.25f, 0.0f, 1.0f);
-        p[P::fltDrive] = clampf (p[P::fltDrive] + drive * 0.3f, 0.0f, 1.0f);
+        p[P::osc2Fm] = clampf (p[P::osc2Fm] + growl * 0.50f, 0.0f, 1.0f);
+        p[P::osc2Level] = clampf (p[P::osc2Level] + growl * 0.20f, 0.0f, 1.0f);
+        p[P::fltReso] = clampf (p[P::fltReso] + growl * 0.18f, 0.0f, 1.0f);
+        p[P::fltDrive] = clampf (p[P::fltDrive] + growl * 0.15f, 0.0f, 1.0f);
+        p[P::wobFm] = clampf (p[P::wobFm] + growl * 0.20f, -1.0f, 1.0f);
+        if (growl > 0.0f && (int) p[P::osc2Mode] == 0)
+            p[P::osc2Mode] = 1.0f;
     }
-    if (filter > 0.0001f)
+
+    // ONE-KNOB FILTH: from the centre upwards the knob also engages the
+    // distortion stage, so a clean patch turns filthy without opening ADVANCED.
+    if (std::fabs (grit) > 0.0001f)
     {
-        p[P::fltCutoff] = clampf (p[P::fltCutoff] * std::exp2 (filter * 1.6f), 20.0f, 18000.0f);
-        p[P::fltReso] = clampf (p[P::fltReso] + filter * 0.12f, 0.0f, 1.0f);
+        p[P::distDrive] = clampf (p[P::distDrive] + grit * 0.35f, 0.0f, 1.0f);
+        p[P::distMix] = clampf (p[P::distMix] + grit * 0.25f, 0.0f, 1.0f);
+        p[P::fltDrive] = clampf (p[P::fltDrive] + grit * 0.22f, 0.0f, 1.0f);
+
+        if (grit > 0.0f)
+        {
+            if ((int) p[P::distType] == DistOff)
+                p[P::distType] = DistTube;
+            p[P::distRoute] = std::max (p[P::distRoute], 1.0f);
+        }
     }
-    if (sub > 0.0001f)
+
+    if (std::fabs (movement) > 0.0001f)
     {
-        p[P::subLevel] = clampf (p[P::subLevel] + sub * 0.4f, 0.0f, 1.0f);
-        p[P::subDrive] = clampf (p[P::subDrive] + sub * 0.3f, 0.0f, 1.0f);
+        p[P::lfo1Depth] = clampf (p[P::lfo1Depth] + movement * 0.35f, 0.0f, 1.0f);
+        p[P::lfo2Depth] = clampf (p[P::lfo2Depth] + movement * 0.25f, 0.0f, 1.0f);
+        p[P::chMix] = clampf (p[P::chMix] + movement * 0.25f, 0.0f, 1.0f);
+        p[P::osc1Pos] = clampf (p[P::osc1Pos] + movement * 0.15f, 0.0f, 1.0f);
+        p[P::fltEnvAmt] = clampf (p[P::fltEnvAmt] + movement * 0.80f, -4.0f, 4.0f);
+        if (movement > 0.0f)
+            p[P::chOn] = 1.0f;
     }
-    if (width > 0.0001f)
+
+    if (std::fabs (width) > 0.0001f)
     {
-        p[P::osc1Spread] = clampf (p[P::osc1Spread] + width * 0.3f, 0.0f, 1.0f);
+        p[P::osc1Spread] = clampf (p[P::osc1Spread] + width * 0.30f, 0.0f, 1.0f);
         p[P::chWidth] = clampf (p[P::chWidth] + width * 0.25f, 0.0f, 1.0f);
-    }
-    if (mix > 0.0001f)
-    {
-        p[P::dlMix] = clampf (p[P::dlMix] + mix * 0.35f, 0.0f, 1.0f);
-        p[P::rvMix] = clampf (p[P::rvMix] + mix * 0.35f, 0.0f, 1.0f);
-        p[P::chMix] = clampf (p[P::chMix] + mix * 0.25f, 0.0f, 1.0f);
+        p[P::osc1Detune] = clampf (p[P::osc1Detune] + width * 22.0f, 0.0f, 60.0f);
+        if (width > 0.0f)
+            p[P::chOn] = 1.0f;
     }
 }
 
@@ -413,7 +516,7 @@ void Engine::updateModulators (int numSamples, const ParamSnapshot& p) noexcept
                              std::memory_order_relaxed);
 
     for (int i = 0; i < kMacroCount; ++i)
-        macroValues[i] = p[(P) ((int) P::macBass + i)];
+        macroValues[i] = p[(P) ((int) P::easyWobble + i)];
 
     if ((randomTick++ & 7u) == 0u)
         for (auto& value : voiceRandom)
@@ -440,6 +543,10 @@ void Engine::buildVoiceParams (const ParamSnapshot& p) noexcept
     voiceParams.osc1Pw = p[P::osc1Pw];
 
     voiceParams.osc2Mode = (int) p[P::osc2Mode];
+    // FM amount without an explicit mode is still FM: that is what keeps the
+    // GROWL macro and the FM-capable characters audible on any patch.
+    if (voiceParams.osc2Mode == 0 && p[P::osc2Fm] > 0.002f)
+        voiceParams.osc2Mode = 1;
     voiceParams.osc2Wave = (int) p[P::osc2Wave];
     voiceParams.osc2Bank = (int) p[P::osc2Bank];
     voiceParams.osc2Pos = p[P::osc2Pos];
@@ -467,6 +574,7 @@ void Engine::buildVoiceParams (const ParamSnapshot& p) noexcept
     voiceParams.subSemis = subOct == 0 ? -12.0f : (subOct == 1 ? -24.0f : 0.0f);
     voiceParams.subLevel = p[P::subLevel];
     voiceParams.subDrive = p[P::subDrive];
+    voiceParams.subLock = p[P::subLock] > 0.5f;
 
     voiceParams.fltType = (int) p[P::fltType];
     voiceParams.fltCutoffSemis = cutoffSemisFromHz (p[P::fltCutoff]);
@@ -480,6 +588,7 @@ void Engine::buildVoiceParams (const ParamSnapshot& p) noexcept
     voiceParams.flt2CutoffSemis = cutoffSemisFromHz (p[P::flt2Cutoff]);
     voiceParams.flt2Reso = p[P::flt2Reso];
     voiceParams.fltVowel = (int) p[P::fltFormant];
+    voiceParams.formantMix = p[P::formantMix];
 
     voiceParams.distType = (int) p[P::distType];
     voiceParams.distDrive = p[P::distDrive];
@@ -650,6 +759,10 @@ EffectSettings Engine::makeEffectSettings (const ParamSnapshot& p, const ModValu
     fx.multibandDrive = p[P::mbDrive];
     fx.multibandMix = p[P::mbMix];
 
+    fx.ottOn = p[P::ottOn] > 0.5f;
+    fx.ottAmount = p[P::ottAmount];
+    fx.ottMix = clampf (p[P::ottMix] + globalMod[DstFxMix] * 0.3f, 0.0f, 1.0f);
+
     fx.wobbleValue = wobbleSmoothed;
     return fx;
 }
@@ -680,7 +793,8 @@ void Engine::process (float* left, float* right, int numSamples)
 
         store.advance (chunk);
         workingParams = store.smoothed();
-        applyMacros (workingParams);
+        applyCharacter (workingParams);
+        applyEasyControls (workingParams);
 
         updateModulators (chunk, workingParams);
         buildVoiceParams (workingParams);

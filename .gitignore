@@ -11,7 +11,8 @@ external/JUCE/
 # Reference-only source drop (GPLv3 Gate12), not part of this plug-in
 MK RATTUS TRANCE GATE/
 
-# IDE / OS leftovers
+# Smoke-test UI snapshots
+editor*.png
 .vs/
 .vscode/*.log
 CMakeUserPresets.json

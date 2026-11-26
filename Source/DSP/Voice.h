@@ -43,11 +43,13 @@ struct VoiceParams
 
     int subWave = 0;
     float subSemis = -12.0f, subLevel = 0.4f, subDrive = 0.0f;
+    bool subLock = true;
 
     int fltType = FilterLP24, flt2Type = FilterLP12, fltRoute = 0, fltVowel = 0;
     float fltCutoffSemis = 0.0f, fltReso = 0.2f, fltDrive = 0.1f;
     float fltKeyTrack = 0.35f, fltEnvAmt = 1.6f, fltMix = 1.0f;
     float flt2CutoffSemis = 0.0f, flt2Reso = 0.1f;
+    float formantMix = 0.0f;
 
     int distType = DistOff, distRoute = 0;
     float distDrive = 0.3f, distTone = 0.0f, distMix = 0.5f, distOutDb = 0.0f;
@@ -89,6 +91,8 @@ public:
         filterR.prepare (sr, combBuffers[1].data(), combSize);
         filter2L.prepare (sr, combBuffers[2].data(), combSize);
         filter2R.prepare (sr, combBuffers[3].data(), combSize);
+        formantL.prepare (sr, combBuffers[4].data(), combSize);
+        formantR.prepare (sr, combBuffers[5].data(), combSize);
         distortion.prepare (sr);
         dcL.prepare (sr);
         dcR.prepare (sr);
@@ -117,6 +121,8 @@ public:
         filterR.reset();
         filter2L.reset();
         filter2R.reset();
+        formantL.reset();
+        formantR.reset();
         distortion.reset();
         dcL.reset();
         dcR.reset();
@@ -186,8 +192,7 @@ public:
         const int unisonCap = quality == 0 ? 3 : (quality == 1 ? 5 : 7);
         const bool cubic = quality == 2;
 
-        const float pos1 = clampf (p.osc1Pos + mod[DstWtPos1], 0.0f, 1.0f);
-        const float pos2 = clampf (p.osc2Pos + mod[DstWtPos2], 0.0f, 1.0f);
+        const float pos1 = clampf (p.osc1Pos + mod[DstWtPos1], 0.0f, 1.0f);        const float pos2 = clampf (p.osc2Pos + mod[DstWtPos2], 0.0f, 1.0f);
         const float pos3 = clampf (p.osc3Pos + mod[DstWtPos3], 0.0f, 1.0f);
         const float pw1 = clampf (p.osc1Pw + mod[DstPw] * 0.45f, 0.05f, 0.95f);
         const float pw2 = clampf (p.osc2Pw + mod[DstPw] * 0.45f, 0.05f, 0.95f);
@@ -245,6 +250,19 @@ public:
         filterL.setCoefficients (p.fltType, cutoffHz, cutReso, formantShift, p.fltVowel, quality);
         filterR.setCoefficients (p.fltType, cutoffHz, cutReso, formantShift, p.fltVowel, quality);
 
+        formantActive = p.formantMix > 0.0005f;
+        if (formantActive)
+        {
+            // Talking bass: a vowel resonator in parallel with the main filter,
+            // so TALKING works on top of any patch. The wobble moves the vowel
+            // through DstFormant and the cutoff tracks the note.
+            const float vowelReso = clampf (0.25f + mod[DstReso] * 0.4f, 0.0f, 0.95f);
+            formantL.setCoefficients (FilterFormant, cutoffHz, vowelReso, formantShift,
+                                      p.fltVowel, quality);
+            formantR.setCoefficients (FilterFormant, cutoffHz, vowelReso, formantShift,
+                                      p.fltVowel, quality);
+        }
+
         if (p.fltRoute != 0)
         {
             const float cutoff2Semis = p.flt2CutoffSemis
@@ -275,6 +293,9 @@ public:
 
         widthGain = clampf (p.width + mod[DstWidth] * 0.6f, 0.0f, 1.6f);
         velocityGain = 1.0f - p.velSens + p.velSens * velocity;
+        subIsLocked = p.subLock;
+        formantMixLevel = p.formantMix;
+        phaseOffset = clampf (mod[DstOsc1Phase], -1.0f, 1.0f) * 0.5f;
     }
 
     // Renders n samples (n <= control block size) additively into the buffers.
@@ -288,6 +309,7 @@ public:
 
         for (int i = 0; i < n; ++i)
         {
+            float subSample = 0.0f;
             const float amp = ampEnv.process();
             filterEnv.process();
             pitchEnv.process();
@@ -309,7 +331,7 @@ public:
 
             float osc1L = 0.0f, osc1R = 0.0f;
             if (osc1Active)
-                osc1.render (osc1L, osc1R, pmOffset);
+                osc1.render (osc1L, osc1R, pmOffset + phaseOffset);
 
             l = osc1L + osc2L;
             r = osc1R + osc2R;
@@ -352,8 +374,15 @@ public:
                     sub = fastTanh (sub * g) * (1.0f / (1.0f + subDriveAmount * 1.5f));
                 }
 
-                l += sub * subLevel;
-                r += sub * subLevel;
+                subSample = sub * subLevel;
+
+                // SUB LOCK keeps the sub out of the filter and distortion so it
+                // stays clean and centred however hard the main bass is driven.
+                if (! subIsLocked)
+                {
+                    l += subSample;
+                    r += subSample;
+                }
             }
 
             if (distortionActive && p.distPre)
@@ -382,6 +411,14 @@ public:
                 r = r + (filteredR - r) * wet;
             }
 
+            if (formantActive)
+            {
+                const float vowelL = formantL.process (l, 0.0f) * 0.7f;
+                const float vowelR = formantR.process (r, 0.0f) * 0.7f;
+                l += (vowelL - l) * formantMixLevel;
+                r += (vowelR - r) * formantMixLevel;
+            }
+
             if (distortionActive && ! p.distPre)
                 distortion.process (l, r);
 
@@ -393,6 +430,12 @@ public:
                 const float side = (l - r) * 0.5f * widthGain;
                 l = mid + side;
                 r = mid - side;
+            }
+
+            if (subIsLocked)
+            {
+                l += subSample;
+                r += subSample;
             }
 
             l = dcL.process (l) * gain;
@@ -429,8 +472,8 @@ private:
     int combSize = 512;
 
     OscUnit osc1, osc2, osc3;
-    ChannelFilter filterL, filterR, filter2L, filter2R;
-    std::array<std::vector<float>, 4> combBuffers;
+    ChannelFilter filterL, filterR, filter2L, filter2R, formantL, formantR;
+    std::array<std::vector<float>, 6> combBuffers;
     DistortionUnit distortion;
     AdsrEnvelope ampEnv, filterEnv, pitchEnv, modEnv;
     DcBlocker dcL, dcR;
@@ -444,9 +487,12 @@ private:
     float subPhase = 0.0f, subIncrement = 0.0f;
     float fmFeedbackState = 0.0f, fmAmount = 0.0f, fmFeedbackAmount = 0.0f, ringAmount = 0.0f;
     float formantShift = 0.0f, widthGain = 1.0f, velocityGain = 1.0f;
+    float formantMixLevel = 0.0f;
+    float phaseOffset = 0.0f;
     float driveLevel = 0.0f;
     bool osc1Active = true, osc2Active = false, osc3Active = false, subActive = false;
     bool fmIsActive = false, distortionActive = false, fltMixActive = true;
+    bool formantActive = false, subIsLocked = true;
 };
 
 } // namespace mk

@@ -257,19 +257,27 @@ void testMatrixAndMacros()
     engine.prepare (48000.0, 512);
     auto& store = engine.params();
     store.set (mk::P::wobDepth, 0.0f);
-    store.set (mk::P::macFilter, 0.0f);
+    store.set (mk::P::easyBass, 0.5f);
     store.requestSnap();
 
     engine.noteOn (33, 1.0f);
     renderEngine (engine, 12000);
     const auto before = renderEngine (engine, 24000);
 
-    store.set (mk::P::macFilter, 1.0f);
+    // BASS is a bipolar macro: below the centre it opens the filter, above it
+    // drops the cutoff and adds sub.
+    store.set (mk::P::easyBass, 1.0f);
     renderEngine (engine, 12000);
     const auto after = renderEngine (engine, 24000);
 
-    check (magnitude (after.left, 1200, 48000) > magnitude (before.left, 1200, 48000) * 1.5,
-           "filter macro opens the sound");
+    check (magnitude (before.left, 400, 48000) > magnitude (after.left, 400, 48000) * 1.2,
+           "bass macro closes the filter");
+
+    store.set (mk::P::easyBass, 0.0f);
+    renderEngine (engine, 12000);
+    const auto opened = renderEngine (engine, 24000);
+    check (magnitude (opened.left, 400, 48000) > magnitude (after.left, 400, 48000),
+           "bass macro opens the filter from below the centre");
 
     store.set (mk::P::mat1Src, (float) mk::SrcModWheel);
     store.set (mk::P::mat1Dst, (float) mk::DstPitch);
@@ -277,6 +285,194 @@ void testMatrixAndMacros()
     engine.setModWheel (1.0f);
     renderEngine (engine, 24000);
     check (engine.activeVoiceCount() == 1, "matrix routing does not disturb voice allocation");
+}
+
+void testCharactersAndMorph()
+{
+    // Every character has to change the sound, and the morph knob has to move
+    // continuously between two of them without blowing up.
+    mk::Engine reference;
+    reference.prepare (48000.0, 512);
+    reference.params().set (mk::P::wobDepth, 0.0f);
+    reference.params().set (mk::P::bassMorph, 0.0f);
+    reference.params().set (mk::P::bassChar, (float) mk::CharWobble);
+    reference.params().set (mk::P::morphChar, (float) mk::CharWobble);
+    reference.params().requestSnap();
+    reference.noteOn (33, 1.0f);
+    renderEngine (reference, 12000);
+    const auto plain = renderEngine (reference, 24000);
+
+    for (int character = 1; character < mk::kCharacterCount; ++character)
+    {
+        mk::Engine engine;
+        engine.prepare (48000.0, 512);
+        engine.params().set (mk::P::wobDepth, 0.0f);
+        engine.params().set (mk::P::bassChar, (float) character);
+        engine.params().set (mk::P::morphChar, (float) character);
+        engine.params().requestSnap();
+        engine.noteOn (33, 1.0f);
+        renderEngine (engine, 12000);
+        const auto shaped = renderEngine (engine, 24000);
+
+        double difference = 0.0;
+        for (size_t i = 0; i < shaped.left.size(); ++i)
+            difference += std::fabs ((double) shaped.left[i] - (double) plain.left[i]);
+
+        check (difference > 1.0, "character changes the sound");
+        check (rms (shaped.left) > 0.005, "character stays audible");
+    }
+
+    mk::Engine morphed;
+    morphed.prepare (48000.0, 512);
+    morphed.params().set (mk::P::bassChar, (float) mk::CharReese);
+    morphed.params().set (mk::P::morphChar, (float) mk::CharTalking);
+    morphed.params().set (mk::P::bassMorph, 0.5f);
+    morphed.params().requestSnap();
+    morphed.noteOn (33, 1.0f);
+    const auto blend = renderEngine (morphed, 24000);
+    check (rms (blend.left) > 0.005, "morph between two characters stays audible");
+    for (const float v : blend.left)
+        check (std::isfinite (v) && std::fabs (v) <= 1.0f, "morphed character stays bounded");
+}
+
+void testSubLock()
+{
+    // A distorted, wide patch: with SUB LOCK the sub must stay centred and
+    // clean, so a sub-only note is mono no matter the drive or width.
+    mk::Engine engine;
+    engine.prepare (48000.0, 512);
+    auto& store = engine.params();
+    store.set (mk::P::osc1Level, 0.0f);
+    store.set (mk::P::subLevel, 0.8f);
+    store.set (mk::P::distType, (float) mk::DistTube);
+    store.set (mk::P::distRoute, 1.0f);
+    store.set (mk::P::distDrive, 1.0f);
+    store.set (mk::P::distMix, 1.0f);
+    store.set (mk::P::chOn, 1.0f);
+    store.set (mk::P::chMix, 1.0f);
+    store.set (mk::P::chWidth, 1.0f);
+    store.set (mk::P::easyWidth, 1.0f);
+    store.set (mk::P::wobDepth, 0.0f);
+    store.set (mk::P::subLock, 1.0f);
+    store.requestSnap();
+
+    engine.noteOn (33, 1.0f);
+    const auto locked = renderEngine (engine, 24000);
+    check (rms (locked.left) > 0.01, "sub is audible with SUB LOCK");
+
+    double maxSide = 0.0;
+    for (size_t i = 0; i < locked.left.size(); ++i)
+        maxSide = std::max (maxSide, std::fabs ((double) locked.left[i] - (double) locked.right[i]));
+    check (maxSide < 1.0e-4, "SUB LOCK keeps the sub perfectly mono");
+
+    // The sub is a pure sine, so a driven harmonic in the locked render means
+    // the sub leaked into the distortion stage.
+    const double cleanHarmonic = magnitude (locked.left, 165.0, 48000);
+    check (cleanHarmonic < 0.002, "SUB LOCK keeps the sub clean of distortion");
+
+    store.set (mk::P::subLock, 0.0f);
+    renderEngine (engine, 24000);
+    const auto loose = renderEngine (engine, 24000);
+    const double drivenHarmonic = magnitude (loose.left, 165.0, 48000);
+    check (drivenHarmonic > cleanHarmonic * 2.0, "without SUB LOCK the sub is driven with the bass");
+}
+
+void testOneKnobFilth()
+{
+    mk::Engine engine;
+    engine.prepare (48000.0, 512);
+    auto& store = engine.params();
+    store.set (mk::P::osc1Wave, (float) mk::WaveSine);
+    store.set (mk::P::osc1Level, 1.0f);
+    store.set (mk::P::subLevel, 0.0f);
+    store.set (mk::P::fltCutoff, 18000.0f);
+    store.set (mk::P::fltEnvAmt, 0.0f);
+    store.set (mk::P::wobDepth, 0.0f);
+    store.set (mk::P::distType, 0.0f);
+    store.set (mk::P::distRoute, 0.0f);
+    store.set (mk::P::easyGrit, 0.5f);
+    store.requestSnap();
+
+    engine.noteOn (33, 1.0f);
+    renderEngine (engine, 12000);
+    const auto clean = renderEngine (engine, 24000);
+
+    // A single knob: from the centre upwards the distortion switches itself on.
+    store.set (mk::P::easyGrit, 1.0f);
+    renderEngine (engine, 12000);
+    const auto filthy = renderEngine (engine, 24000);
+
+    const auto harmonics = [] (const std::vector<float>& data)
+    {
+        double sum = 0.0;
+        for (const double hz : { 110.0, 165.0, 220.0, 275.0, 330.0 })
+            sum += magnitude (data, hz, 48000);
+        return sum;
+    };
+
+    const double cleanHarmonic = harmonics (clean.left);
+    const double filthyHarmonic = harmonics (filthy.left);
+
+    check (filthyHarmonic > cleanHarmonic * 1.5, "GRIT is one-knob filth");
+    check (rms (filthy.left) > 0.005, "filth stays audible");
+    for (const float v : filthy.left)
+        check (std::isfinite (v) && std::fabs (v) <= 1.0f, "filth stays bounded");
+}
+
+void testOttCompressor()
+{
+    mk::Engine engine;
+    engine.prepare (48000.0, 512);
+    auto& store = engine.params();
+    store.set (mk::P::osc1Wave, (float) mk::WaveSine);
+    store.set (mk::P::osc1Level, 0.4f);
+    store.set (mk::P::subLevel, 0.0f);
+    store.set (mk::P::fltCutoff, 18000.0f);
+    store.set (mk::P::wobDepth, 0.0f);
+    store.set (mk::P::outputDb, -18.0f);
+    store.set (mk::P::cpOn, 0.0f);
+    store.set (mk::P::ottOn, 0.0f);
+    store.requestSnap();
+
+    engine.noteOn (33, 1.0f);
+    renderEngine (engine, 12000);
+    const auto plain = renderEngine (engine, 24000);
+
+    store.set (mk::P::ottOn, 1.0f);
+    store.set (mk::P::ottAmount, 1.0f);
+    store.set (mk::P::ottMix, 1.0f);
+    renderEngine (engine, 12000);
+    const auto ott = renderEngine (engine, 24000);
+
+    check (rms (ott.left) > rms (plain.left) * 1.2, "OTT lifts quiet material");
+    for (const float v : ott.left)
+        check (std::isfinite (v) && std::fabs (v) <= 1.0f, "OTT stays bounded");
+}
+
+void testRandomBass()
+{
+    mk::ParamSnapshot a, b;
+    mk::makeRandomBass (a, 12345u);
+    mk::makeRandomBass (b, 12345u);
+    for (int i = 0; i < mk::kParamCount; ++i)
+        check (std::fabs (a.values[i] - b.values[i]) < 1.0e-6f, "random bass is deterministic");
+
+    for (uint32_t seed = 1; seed <= 12; ++seed)
+    {
+        mk::ParamSnapshot snapshot;
+        mk::makeRandomBass (snapshot, seed);
+
+        mk::Engine engine;
+        engine.prepare (48000.0, 512);
+        engine.params().setAll (snapshot);
+        engine.params().requestSnap();
+        engine.noteOn (33, 1.0f);
+
+        const auto out = renderEngine (engine, 24000);
+        check (rms (out.left) > 0.01, "random bass is audible");
+        for (const float v : out.left)
+            check (std::isfinite (v) && std::fabs (v) <= 1.0f, "random bass stays bounded");
+    }
 }
 
 void reportMemory()
@@ -409,6 +605,11 @@ int main()
     testPolyphonyAndStealing();
     testMonoAndGlide();
     testMatrixAndMacros();
+    testCharactersAndMorph();
+    testSubLock();
+    testOneKnobFilth();
+    testOttCompressor();
+    testRandomBass();
     testPresets();
     testTranceGate();
     testGatePresets();
@@ -417,7 +618,7 @@ int main()
     reportMemory();
 
     if (failures == 0)
-        std::printf ("PASS: engine, tuning, wobble, filters, voices, presets, gate\n");
+        std::printf ("PASS: engine, tuning, wobble, characters, sub lock, filth, ott, random, filters, voices, presets, gate\n");
     else
         std::printf ("%d failure(s)\n", failures);
 

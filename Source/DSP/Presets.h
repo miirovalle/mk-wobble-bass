@@ -27,6 +27,10 @@ const char* const* presetCategories (int& count) noexcept;
 bool applyPresetString (const char* settings, ParamSnapshot& snapshot) noexcept;
 bool applyFactoryPreset (int index, ParamSnapshot& snapshot) noexcept;
 
+// RANDOM BASS: a seeded generator that only produces musically useful patches
+// (audible wobble, valid filter, bounded level). Same seed, same patch.
+void makeRandomBass (ParamSnapshot& snapshot, uint32_t seed) noexcept;
+
 // Matching helper for the browser (case-insensitive substring).
 bool presetMatches (const char* name, const char* category, const char* query) noexcept;
 

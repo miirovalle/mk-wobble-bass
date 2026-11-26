@@ -1,6 +1,6 @@
-"""Renders the MK WOBBLE BASS iOS app icon.
+"""Renders the WOBBLE MACHINE iOS app icon.
 
-Procedural (no external assets): dark violet scope background, a bold W built
+Procedural (no external assets): charcoal scope background with an orange glow, a bold W built
 from the wobble waveform, and a sub-bass sine underneath. Everything is drawn on
 a 2x supersampled canvas so curves stay clean at 29x29.
 
@@ -82,15 +82,15 @@ def build(requested_size: int) -> Image.Image:
     s = size / 1024.0
     px = lambda v: v * s
 
-    base = vertical_gradient(size, (12, 8, 22), (40, 17, 66))
-    base = add(base, radial_glow(size, (px(512), px(500)), px(500), (90, 32, 165), 210))
+    base = vertical_gradient(size, (12, 10, 8), (54, 24, 6))
+    base = add(base, radial_glow(size, (px(512), px(500)), px(500), (190, 80, 10), 210))
 
     # Scope rings and ticks.
     ring = solid(size, (0, 0, 0))
     rd = ImageDraw.Draw(ring)
     for radius, alpha in ((px(316), 1.0), (px(372), 0.75), (px(430), 1.0)):
         rd.ellipse([px(512) - radius, px(512) - radius, px(512) + radius, px(512) + radius],
-                   outline=(int(120 * alpha), int(60 * alpha), int(200 * alpha)),
+                   outline=(int(255 * alpha), int(120 * alpha), int(30 * alpha)),
                    width=max(1, int(px(2))))
     for i in range(60):
         angle = i * math.tau / 60
@@ -99,7 +99,7 @@ def build(requested_size: int) -> Image.Image:
         r0 = px(338)
         r1 = px(338) + (px(15) if i % 5 == 0 else px(7))
         major = i % 5 == 0
-        colour = (176, 104, 248) if major else (96, 52, 150)
+        colour = (255, 150, 60) if major else (120, 60, 20)
         rd.line([(px(512) + math.cos(angle) * r0, px(512) + math.sin(angle) * r0),
                  (px(512) + math.cos(angle) * r1, px(512) + math.sin(angle) * r1)],
                 fill=colour, width=max(1, int(px(3))))
@@ -110,12 +110,12 @@ def build(requested_size: int) -> Image.Image:
                               lambda t: px(748) + math.sin(t * math.tau + math.pi) * px(36))
 
     sub_glow = solid(size, (0, 0, 0))
-    stamp_polyline(ImageDraw.Draw(sub_glow), sub_points, px(40), (94, 38, 172))
+    stamp_polyline(ImageDraw.Draw(sub_glow), sub_points, px(40), (150, 70, 15))
     base = add(base, sub_glow.filter(ImageFilter.GaussianBlur(px(24))), 0.85)
 
     sub_core = Image.new("L", (size, size), 0)
     stamp_polyline(ImageDraw.Draw(sub_core), sub_points, px(24), 255)
-    base.paste(solid(size, (158, 96, 240)), (0, 0), sub_core)
+    base.paste(solid(size, (255, 150, 60)), (0, 0), sub_core)
 
     # W glyph: lavender-to-violet gradient through a stroked mask.
     w_points = [
@@ -132,14 +132,14 @@ def build(requested_size: int) -> Image.Image:
 
     # Dark halo separates the glyph from its own bloom.
     halo = mask.filter(ImageFilter.MaxFilter((int(px(11)) | 1)))
-    base.paste(solid(size, (22, 7, 40)), (0, 0), Image.eval(halo, lambda v: int(v * 0.85)))
+    base.paste(solid(size, (18, 10, 4)), (0, 0), Image.eval(halo, lambda v: int(v * 0.85)))
 
     glow_mask = mask.filter(ImageFilter.GaussianBlur(px(26)))
     glow = solid(size, (0, 0, 0))
-    glow.paste((134, 74, 236), (0, 0), glow_mask)
+    glow.paste((255, 120, 20), (0, 0), glow_mask)
     base = add(base, glow, 0.60)
 
-    base.paste(vertical_gradient_range(size, px(300), px(672), (249, 243, 255), (118, 40, 214)),
+    base.paste(vertical_gradient_range(size, px(300), px(672), (255, 244, 232), (255, 118, 16)),
                (0, 0), mask)
 
     # Top-edge highlight.

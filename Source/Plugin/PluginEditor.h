@@ -1,9 +1,10 @@
 #pragma once
 
-// Two tabs, one tool each:
-//   WOBBLE - draw the wobble shape, then RATE / DEPTH / TYPE
-//   GATE   - a 64-step trance gate with 100 rhythms
-// The output waveform sits under the header on both tabs.
+// The plug-in shell: header (title, preset, RANDOM, PRESETS), live output
+// scope, the EASY / ADVANCED tab switch and the playable keyboard.
+//   EASY      - six macro knobs, bass character, morph, wobble rate
+//   ADVANCED  - oscillators, filters, envelopes, LFOs, matrix, distortion,
+//               effects and the trance gate
 
 #include "Plugin/PluginProcessor.h"
 #include "UI/GraphControls.h"
@@ -36,21 +37,22 @@ private:
     void closeBrowser();
 
     int keyboardHeight() const;
+    int headerHeight() const;
 
     WobbleAudioProcessor& processor;
     MkLookAndFeel lookAndFeel;
 
     juce::Label titleLabel;
     juce::Label presetLabel;
+    juce::TextButton randomButton { "RANDOM" };
     juce::TextButton browserButton { "PRESETS" };
-    juce::TextButton wobbleTab { "WOBBLE" };
-    juce::TextButton gateTab { "GATE" };
-    juce::TextButton lfoTab { "LFO" };
+    juce::TextButton easyTab { "EASY" };
+    juce::TextButton advancedTab { "ADVANCED" };
 
     WaveScope scope;
-    WobblePage wobblePage;
-    GatePage gatePage;
-    LfoPage lfoPage;
+    LevelMeter meter;
+    EasyPage easyPage;
+    AdvancedPage advancedPage;
 
     std::unique_ptr<PresetBrowser> browser;
     juce::MidiKeyboardComponent keyboard;

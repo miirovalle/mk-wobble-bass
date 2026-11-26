@@ -14,7 +14,7 @@ bool isLogarithmic (int index)
     return logUnit && meta.lo > 0.0f;
 }
 
-juce::String presetFolderName() { return "MKWobbleBass"; }
+juce::String presetFolderName() { return "WobbleMachine"; }
 
 } // namespace
 
@@ -237,6 +237,17 @@ void PresetManager::loadDefault()
     currentIsUser = false;
 }
 
+void PresetManager::setName (const juce::String& newName, const juce::String& newCategory)
+{
+    name = newName;
+    category = newCategory;
+    current = -1;
+    currentIsUser = false;
+
+    if (onPresetChanged != nullptr)
+        onPresetChanged();
+}
+
 void PresetManager::readFavorites()
 {
     const auto file = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
@@ -441,8 +452,20 @@ void WobbleAudioProcessor::applyCcMap (int cc, int value)
     }
 }
 
-void WobbleAudioProcessor::startMidiLearn (int paramIndex)
+void WobbleAudioProcessor::randomize()
 {
+    ParamSnapshot snapshot;
+    makeRandomBass (snapshot, (uint32_t) juce::Time::getMillisecondCounterHiRes());
+
+    for (int i = 0; i < kParamCount; ++i)
+        if (auto* parameter = apvts.getParameter (paramId (i)))
+            parameter->setValueNotifyingHost (parameter->convertTo0to1 (snapshot.values[i]));
+
+    presets.setName ("Random Bass", "Random");
+    engine.params().requestSnap();
+}
+
+void WobbleAudioProcessor::startMidiLearn (int paramIndex){
     learnParam.store (juce::jlimit (0, kParamCount - 1, paramIndex), std::memory_order_relaxed);
 }
 
@@ -556,7 +579,7 @@ void WobbleAudioProcessor::setStateInformation (const void* data, int size)
     auto xml = getXmlFromBinary (data, size);
     if (xml == nullptr || ! xml->hasTagName (apvts.state.getType()))
     {
-        juce::Logger::writeToLog ("MK Wobble Bass: rejected invalid state");
+        juce::Logger::writeToLog ("Wobble Machine: rejected invalid state");
         return;
     }
 

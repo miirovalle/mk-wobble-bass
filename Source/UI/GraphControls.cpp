@@ -28,9 +28,10 @@ float readPlain (juce::AudioProcessorValueTreeState& state, int index)
 
 //==============================================================================
 ParamKnob::ParamKnob (juce::AudioProcessorValueTreeState& state, int paramIndex,
-                      const juce::String& labelOverride)
+                      const juce::String& labelOverride, bool large)
     : labelText (labelOverride.isNotEmpty() ? labelOverride : juce::String (paramName (paramIndex))),
-      index (paramIndex)
+      index (paramIndex),
+      isLarge (large)
 {
     slider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
     slider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
@@ -52,21 +53,64 @@ void ParamKnob::paint (juce::Graphics& g)
 {
     auto bounds = getLocalBounds();
 
-    g.setColour (theme::textDim());
-    g.setFont (theme::labelFont (12.0f));
-    g.drawFittedText (labelText, bounds.removeFromTop (18), juce::Justification::centred, 1);
+    g.setColour (isLarge ? theme::text() : theme::textDim());
+    g.setFont (theme::labelFont (isLarge ? 15.0f : 12.0f));
+    g.drawFittedText (labelText, bounds.removeFromTop (isLarge ? 22 : 18),
+                      juce::Justification::centred, 1);
 
     char text[32] {};
     formatParamValue (index, (float) slider.getValue(), text, (int) sizeof (text));
 
-    g.setColour (theme::text());
-    g.setFont (theme::valueFont (13.0f));
-    g.drawFittedText (text, bounds.removeFromBottom (20), juce::Justification::centred, 1);
+    g.setColour (isLarge ? theme::accentBright() : theme::text());
+    g.setFont (theme::valueFont (isLarge ? 14.0f : 13.0f));
+    g.drawFittedText (text, bounds.removeFromBottom (isLarge ? 22 : 20),
+                      juce::Justification::centred, 1);
 }
 
 void ParamKnob::resized()
 {
-    slider.setBounds (getLocalBounds().reduced (0, 20));
+    const int inset = isLarge ? 24 : 20;
+    auto area = getLocalBounds().reduced (0, inset);
+    const int size = juce::jmin (juce::jmin (area.getWidth(), area.getHeight()), isLarge ? 230 : 132);
+    slider.setBounds (area.withSizeKeepingCentre (size, size));
+}
+
+//==============================================================================
+ParamChoice::ParamChoice (juce::AudioProcessorValueTreeState& state, int paramIndex,
+                          const juce::String& labelOverride)
+    : labelText (labelOverride.isNotEmpty() ? labelOverride : juce::String (paramName (paramIndex)))
+{
+    int count = 0;
+    if (const auto* choices = paramChoices (paramIndex, count))
+        for (int i = 0; i < count; ++i)
+            combo.addItem (choices[i], i + 1);
+
+    combo.setJustificationType (juce::Justification::centred);
+    addAndMakeVisible (combo);
+
+    attachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
+        state, paramId (paramIndex), combo);
+}
+
+ParamChoice::~ParamChoice()
+{
+    attachment.reset();
+}
+
+void ParamChoice::paint (juce::Graphics& g)
+{
+    auto bounds = getLocalBounds();
+    g.setColour (theme::textDim());
+    g.setFont (theme::labelFont (12.0f));
+    g.drawFittedText (labelText, bounds.removeFromTop (18), juce::Justification::centred, 1);
+}
+
+void ParamChoice::resized()
+{
+    auto bounds = getLocalBounds();
+    bounds.removeFromTop (18);
+    const int height = juce::jmin (26, juce::jmax (20, bounds.getHeight() - 10));
+    combo.setBounds (bounds.withSizeKeepingCentre (juce::jmax (40, bounds.getWidth() - 8), height));
 }
 
 //==============================================================================
@@ -377,16 +421,16 @@ WaveScope::~WaveScope() { stopTimer(); }
 
 void WaveScope::timerCallback()
 {
-    if (! isVisible())
-        return;
-
-    engine.copyScope (samples.data(), (int) samples.size());
-    peak = engine.outputPeak();
-    repaint();
+    if (isVisible())
+        repaint();
 }
 
 void WaveScope::paint (juce::Graphics& g)
 {
+    // Sampled at paint time so an off-screen render shows the real signal too.
+    engine.copyScope (samples.data(), (int) samples.size());
+    peak = engine.outputPeak();
+
     auto area = getLocalBounds().toFloat().reduced (2.0f);
 
     g.setColour (theme::panel());
@@ -437,6 +481,118 @@ void WaveScope::paint (juce::Graphics& g)
         g.setColour (theme::accent().withAlpha (0.9f));
         g.strokePath (wave, juce::PathStrokeType (1.5f));
     }
+}
+
+//==============================================================================
+WobbleStrip::WobbleStrip (const Engine& engineToUse) : engine (engineToUse)
+{
+    setInterceptsMouseClicks (false, false);
+    startTimerHz (30);
+}
+
+WobbleStrip::~WobbleStrip() { stopTimer(); }
+
+void WobbleStrip::timerCallback()
+{
+    if (isVisible())
+        repaint();
+}
+
+void WobbleStrip::paint (juce::Graphics& g)
+{
+    engine.copyWobbleTrace (trace.data(), (int) trace.size());
+    rateHz = engine.wobbleRateHz();
+    shape = engine.wobbleShapeForDisplay();
+
+    auto area = getLocalBounds().toFloat().reduced (1.0f);
+    g.setColour (theme::panel().withAlpha (0.75f));
+    g.fillRoundedRectangle (area, 10.0f);
+    g.setColour (theme::outline());
+    g.drawRoundedRectangle (area, 10.0f, 1.0f);
+
+    auto inner = area.reduced (12.0f, 6.0f);
+    auto header = inner.removeFromTop (14.0f);
+
+    g.setColour (theme::accent());
+    g.setFont (theme::labelFont (11.0f));
+    g.drawFittedText ("SMART WOBBLE", header.toNearestInt(), juce::Justification::centredLeft, 1);
+
+    int choiceCount = 0;
+    const auto* shapes = paramChoices ((int) P::wobShape, choiceCount);
+    const int shapeIndex = juce::jlimit (0, choiceCount - 1, shape);
+
+    g.setColour (theme::textDim());
+    g.setFont (theme::valueFont (11.0f));
+    g.drawFittedText (juce::String (rateHz, rateHz < 10.0f ? 2 : 1) + " Hz   "
+                          + juce::String (shapes != nullptr ? shapes[shapeIndex] : ""),
+                      header.toNearestInt(), juce::Justification::centredRight, 1);
+
+    const auto centreY = inner.getCentreY();
+    g.setColour (theme::outline().withAlpha (0.6f));
+    g.drawHorizontalLine ((int) centreY, inner.getX(), inner.getRight());
+
+    const float depth = juce::jlimit (0.0f, 1.0f, engine.wobbleDepthForDisplay());
+    const float phase = engine.wobblePhase();
+    const bool shapeIsDrawable = shape <= (int) ShapeRamp || shape == (int) ShapeCustom;
+
+    const auto wobbleAt = [this, depth] (float position)
+    {
+        const float p = position - std::floor (position);
+        if (shape == (int) ShapeCustom)
+            return engine.wobblePoint (juce::jlimit (0, Engine::kWobblePoints - 1,
+                                                     (int) (p * (float) Engine::kWobblePoints)))
+                   * depth;
+        return shapeValue (shape, p, 0.6f) * depth;
+    };
+
+    juce::Path curve;
+
+    if (shapeIsDrawable)
+    {
+        // One full cycle of the shape: readable even when the host is stopped.
+        constexpr int points = 128;
+        for (int i = 0; i <= points; ++i)
+        {
+            const float p = (float) i / (float) points;
+            const float x = inner.getX() + inner.getWidth() * p;
+            const float y = centreY - juce::jlimit (-1.0f, 1.0f, wobbleAt (p)) * inner.getHeight() * 0.48f;
+            if (i == 0)
+                curve.startNewSubPath (x, y);
+            else
+                curve.lineTo (x, y);
+        }
+
+        g.setColour (theme::accent().withAlpha (0.25f));
+        g.strokePath (curve, juce::PathStrokeType (6.0f, juce::PathStrokeType::curved));
+        g.setColour (theme::accentBright());
+        g.strokePath (curve, juce::PathStrokeType (1.8f, juce::PathStrokeType::curved));
+
+        const float dotX = inner.getX() + inner.getWidth() * juce::jlimit (0.0f, 1.0f, phase);
+        const float dotY = centreY
+                         - juce::jlimit (-1.0f, 1.0f, wobbleAt (phase)) * inner.getHeight() * 0.48f;
+        g.setColour (theme::accent().withAlpha (0.45f));
+        g.drawVerticalLine ((int) dotX, inner.getY(), inner.getBottom());
+        g.setColour (theme::text());
+        g.fillEllipse (juce::Rectangle<float> (8.0f, 8.0f).withCentre ({ dotX, dotY }));
+        return;
+    }
+
+    // Random shapes have no continuous curve, so scroll the live trace instead.
+    const int count = (int) trace.size();
+    for (int i = 0; i < count; ++i)
+    {
+        const float x = inner.getX() + inner.getWidth() * (float) i / (float) (count - 1);
+        const float y = centreY - juce::jlimit (-1.0f, 1.0f, trace[(size_t) i]) * inner.getHeight() * 0.48f;
+        if (i == 0)
+            curve.startNewSubPath (x, y);
+        else
+            curve.lineTo (x, y);
+    }
+
+    g.setColour (theme::accent().withAlpha (0.25f));
+    g.strokePath (curve, juce::PathStrokeType (6.0f, juce::PathStrokeType::curved));
+    g.setColour (theme::accentBright());
+    g.strokePath (curve, juce::PathStrokeType (1.8f, juce::PathStrokeType::curved));
 }
 
 //==============================================================================
@@ -782,7 +938,7 @@ void LevelMeter::paint (juce::Graphics& g)
 {
     const auto bounds = getLocalBounds().toFloat();
 
-    g.setColour (juce::Colour (0xff0d0a14));
+    g.setColour (juce::Colour (0xff0d0c0b));
     g.fillRoundedRectangle (bounds, 4.0f);
     g.setColour (theme::outline());
     g.drawRoundedRectangle (bounds, 4.0f, 1.0f);

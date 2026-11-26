@@ -7,6 +7,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <functional>
 #include <vector>
 
 namespace
@@ -143,6 +144,29 @@ int main (int argc, char** argv)
         processor.engine.tranceGate().setPattern (0x5555555555555555ull);
     }
 
+    // RANDOM BASS has to produce a playable, bounded patch every time.
+    {
+        processor.randomize();
+        processor.engine.allNotesOff (true);
+        midi.addEvent (juce::MidiMessage::noteOn (1, 33, 1.0f), 0);
+
+        double randomPeak = 0.0;
+        for (int block = 0; block < 60; ++block)
+        {
+            buffer.clear();
+            processor.processBlock (buffer, midi);
+            midi.clear();
+            randomPeak = juce::jmax (randomPeak, (double) buffer.getMagnitude (0, buffer.getNumSamples()));
+        }
+
+        check (std::isfinite (randomPeak) && randomPeak > 0.01 && randomPeak <= 1.0001,
+               "random bass is audible and bounded");
+        midi.addEvent (juce::MidiMessage::noteOff (1, 33), 0);
+        buffer.clear();
+        processor.processBlock (buffer, midi);
+        midi.clear();
+    }
+
     // State round-trip.
     juce::MemoryBlock state;
     processor.getStateInformation (state);
@@ -182,13 +206,9 @@ int main (int argc, char** argv)
             std::printf ("snapshot: %s\n", output.getFullPathName().toRawUTF8());
         };
 
-        renderTo (*editor, "editor.png");
-        renderTo (*editor, "editor_after.png");
-
-
-        // A musical preset plus a held note so the scope and meter show data.
-        processor.presets.load (1);
-        processor.presets.loadNext (0);
+        // A musical preset plus a held note so the rendered snapshots show a
+        // real patch, a live scope and a live meter.
+        processor.presets.load (mk::factoryPresetCount() - 6);   // "WM Wobble"
 
         processor.engine.noteOn (33, 1.0f);
         juce::AudioBuffer<float> snapshotBuffer (2, 128);
@@ -199,20 +219,57 @@ int main (int argc, char** argv)
             processor.processBlock (snapshotBuffer, emptyMidi);
         }
 
-        for (auto* child : editor->getChildren())
-        {
-            if (auto* button = dynamic_cast<juce::TextButton*> (child))
-            {
-                const auto text = button->getButtonText();
+        renderTo (*editor, "editor.png");
+        renderTo (*editor, "editor_after.png");
 
-                if (text == "GATE" || text == "LFO")
+        // Also prove the minimum window size still lays out cleanly.
+        editor->setSize (900, 600);
+        renderTo (*editor, "editor_small.png");
+        editor->setSize (1180, 760);
+
+        // Collect every button in the editor, including the ADVANCED sub-tabs.
+        std::vector<juce::Button*> buttons;
+        std::function<void (juce::Component&)> collect;
+        collect = [&] (juce::Component& component)
+        {
+            for (auto* child : component.getChildren())
+            {
+                if (auto* button = dynamic_cast<juce::Button*> (child))
+                    buttons.push_back (button);
+                collect (*child);
+            }
+        };
+        collect (*editor);
+
+        auto clickButton = [&] (const juce::String& text)
+        {
+            for (auto* button : buttons)
+            {
+                if (button->getButtonText() == text)
                 {
-                    if (button->onClick != nullptr) button->onClick();
-                    renderTo (*editor, "editor_" + text.toLowerCase() + ".png");
-                    if (button->onClick != nullptr) button->onClick();
+                    if (button->onClick != nullptr)
+                        button->onClick();
+                    return true;
                 }
             }
+            return false;
+        };
+
+        clickButton ("ADVANCED");
+        renderTo (*editor, "editor_advanced.png");
+
+        editor->setSize (900, 600);
+        renderTo (*editor, "editor_small_advanced.png");
+        editor->setSize (1180, 760);
+
+        for (const auto* name : { "WOBBLE", "OSC", "FILTER", "ENV", "LFO", "MATRIX",
+                                  "DIST", "FX", "GATE" })
+        {
+            if (clickButton (name))
+                renderTo (*editor, juce::String ("editor_adv_") + juce::String (name).toLowerCase() + ".png");
         }
+
+        clickButton ("EASY");
     }
 
     if (failures == 0)

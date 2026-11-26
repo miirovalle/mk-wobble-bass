@@ -22,7 +22,10 @@ static_assert (sizeof (kMeta) / sizeof (kMeta[0]) == (size_t) kParamCount,
 
 const char* const kPolyModes[] = { "Poly", "Mono", "Legato" };
 const char* const kQuality[] = { "Eco", "Normal", "High" };
+const char* const kBassCharacters[] = { "WOBBLE", "GROWL", "REESE", "NEURO", "SCREAM", "TALKING" };
 const char* const kOnOff[] = { "Off", "On" };
+
+
 const char* const kFreeSync[] = { "Free", "Sync" };
 const char* const kSyncFree[] = { "Sync", "Free" };
 const char* const kGateDivisions[] = { "1/32", "1/16", "1/8", "1/4" };
@@ -51,13 +54,13 @@ const char* const kDistTypes[] = { "Off", "Soft Clip", "Hard Clip", "Tube", "Dio
 const char* const kModSources[] = { "None", "LFO 1", "LFO 2", "LFO 3", "LFO 4", "Wobble",
                                     "Amp Env", "Filter Env", "Pitch Env", "Mod Env", "Velocity",
                                     "Mod Wheel", "Aftertouch", "Key Track", "Random",
-                                    "Macro 1", "Macro 2", "Macro 3", "Macro 4",
-                                    "Macro 5", "Macro 6", "Macro 7", "Macro 8" };
+                                    "Easy Wobble", "Easy Bass", "Easy Growl", "Easy Grit",
+                                    "Easy Movement", "Easy Width", "Macro 7", "Macro 8" };
 const char* const kModDests[] = { "None", "Pitch", "Cutoff", "Resonance", "WT Pos 1", "WT Pos 2",
                                   "WT Pos 3", "FM Amount", "Pulse Width", "Drive", "Width",
                                   "Sub Level", "Ring Mod", "Formant", "Osc 2 Pitch", "LFO Depth",
                                   "FX Mix", "Dist Mix", "Delay Mix", "Reverb Mix", "Chorus Mix",
-                                  "Osc 1 Level", "Osc 2 Level", "Osc 3 Level" };
+                                  "Osc 1 Level", "Osc 2 Level", "Osc 3 Level", "Osc 1 Phase" };
 
 static_assert (sizeof (kModSources) / sizeof (kModSources[0]) == (size_t) kModSourceCount, "mod sources");
 static_assert (sizeof (kModDests) / sizeof (kModDests[0]) == (size_t) kModDestCount, "mod dests");
@@ -168,6 +171,9 @@ const char* const* paramChoices (int index, int& count) noexcept
         case (int) P::distType: count = 12; return kDistTypes;
         case (int) P::distPre: count = 2; return kPrePost;
         case (int) P::wobMode: count = 2; return kSyncFree;
+        case (int) P::bassChar: case (int) P::morphChar:
+            count = kCharacterCount; return kBassCharacters;
+        case (int) P::subLock: count = 2; return kOnOff;
         case (int) P::gateOn: count = 2; return kOnOff;
         case (int) P::gateDiv: count = 4; return kGateDivisions;        case (int) P::wobDiv: case (int) P::dlDiv: count = kDivisionCount; return syncDivisionNames();
         case (int) P::wobShape: count = 10; return kWobbleShapes;
@@ -175,6 +181,7 @@ const char* const* paramChoices (int index, int& count) noexcept
         case (int) P::dlSync: count = 2; return kFreeSync;
         case (int) P::chOn: case (int) P::phOn: case (int) P::flOn: case (int) P::dlOn:
         case (int) P::rvOn: case (int) P::cpOn: case (int) P::mbOn: case (int) P::dlPing:
+        case (int) P::ottOn:
             count = 2; return kOnOff;
         default: break;
     }

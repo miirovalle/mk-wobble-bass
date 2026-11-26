@@ -1,7 +1,7 @@
 name: iOS AUv3 IPA
 
 # Builds the iPadOS product and packages it as an installable .ipa:
-#   MK WOBBLE BASS.app            standalone container (the host app)
+#   WOBBLE MACHINE.app            standalone container (the host app)
 #   .../PlugIns/*.appex           the AUv3 instrument embedded inside it
 #
 # Signing is optional. Without secrets the job produces an unsigned IPA, which
@@ -220,7 +220,7 @@ jobs:
           else
             SUFFIX="-unsigned"
           fi
-          NAME="MK-WOBBLE-BASS-${VERSION}-ios${SUFFIX}"
+          NAME="WOBBLE-MACHINE-${VERSION}-ios${SUFFIX}"
 
           APP="$(find "$BUILD_DIR" -type d -name '*.app' -not -path '*/Disabled/*' | head -n 1)"
           if [ -z "$APP" ]; then
@@ -290,16 +290,16 @@ jobs:
       - name: Summary
         run: |
           {
-            echo "## MK WOBBLE BASS - iPadOS AUv3"
+            echo "## WOBBLE MACHINE - iPadOS AUv3"
             echo ""
             echo "- Commit: \`${GITHUB_SHA}\`"
             echo "- Version: ${{ steps.package.outputs.version }}"
             echo "- Signing: $( [ "${{ steps.signing.outputs.enabled }}" = "true" ] && echo "signed" || echo "unsigned" )"
             echo ""
             echo "### Install"
-            echo "1. Download the \`MK-WOBBLE-BASS-*-ios\` artifact below."
+            echo "1. Download the \`WOBBLE-MACHINE-*-ios\` artifact below."
             echo "2. Install with AltStore, Sideloadly or Xcode (Window > Devices and Simulators)."
-            echo "3. Launch **MK WOBBLE BASS** once so iPadOS registers the audio unit."
+            echo "3. Launch **WOBBLE MACHINE** once so iPadOS registers the audio unit."
             echo "4. It appears as an instrument (\`aumu\`) in AUM, Cubasis, Auria and Drambo."
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -333,5 +333,5 @@ jobs:
         run: |
           set -euo pipefail
           gh release view "$TAG" >/dev/null 2>&1 \
-            || gh release create "$TAG" --title "$TAG" --notes "MK WOBBLE BASS $TAG"
+            || gh release create "$TAG" --title "$TAG" --notes "WOBBLE MACHINE $TAG"
           gh release upload "$TAG" dist/* --clobber

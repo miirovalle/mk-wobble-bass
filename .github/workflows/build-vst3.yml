@@ -94,16 +94,16 @@ jobs:
           $artefacts = Join-Path $PWD "build/MKWobbleBass_artefacts/Release"
           New-Item -ItemType Directory -Force dist | Out-Null
 
-          $vst3 = Join-Path $artefacts "VST3/MK WOBBLE BASS.vst3"
-          $exe  = Join-Path $artefacts "Standalone/MK WOBBLE BASS.exe"
+          $vst3 = Join-Path $artefacts "VST3/WOBBLE MACHINE.vst3"
+          $exe  = Join-Path $artefacts "Standalone/WOBBLE MACHINE.exe"
           if (-not (Test-Path $vst3)) { throw "VST3 bundle was not produced: $vst3" }
           if (-not (Test-Path $exe))  { throw "Standalone executable was not produced: $exe" }
 
           # The .vst3 is a folder; archive it so the bundle layout survives.
           Compress-Archive -Path $vst3 `
-            -DestinationPath "dist/MK-WOBBLE-BASS-$version-VST3-Windows-x64.zip"
+            -DestinationPath "dist/WOBBLE-MACHINE-$version-VST3-Windows-x64.zip"
           Compress-Archive -Path $exe `
-            -DestinationPath "dist/MK-WOBBLE-BASS-$version-Standalone-Windows-x64.zip"
+            -DestinationPath "dist/WOBBLE-MACHINE-$version-Standalone-Windows-x64.zip"
 
           Get-ChildItem dist | Select-Object Name, Length
 
@@ -161,8 +161,8 @@ jobs:
           [ -n "$VERSION" ] || VERSION="0.0.0"
 
           ARTEFACTS="build/MKWobbleBass_artefacts/Release"
-          VST3="$ARTEFACTS/VST3/MK WOBBLE BASS.vst3"
-          AU="$ARTEFACTS/AU/MK WOBBLE BASS.component"
+          VST3="$ARTEFACTS/VST3/WOBBLE MACHINE.vst3"
+          AU="$ARTEFACTS/AU/WOBBLE MACHINE.component"
 
           [ -d "$VST3" ] || { echo "::error::VST3 bundle was not produced"; exit 1; }
           [ -d "$AU" ] || { echo "::error::Audio Unit bundle was not produced"; exit 1; }
@@ -173,13 +173,13 @@ jobs:
             lipo -info "$bundle/Contents/MacOS/$EXE"
           done
 
-          STAGING="staging/MK-WOBBLE-BASS-${VERSION}-macOS"
+          STAGING="staging/WOBBLE-MACHINE-${VERSION}-macOS"
           rm -rf staging dist
           mkdir -p "$STAGING/VST3" "$STAGING/Audio Unit" dist
           ditto "$VST3" "$STAGING/VST3/$(basename "$VST3")"
           ditto "$AU" "$STAGING/Audio Unit/$(basename "$AU")"
           ditto -c -k --sequesterRsrc --keepParent "$STAGING" \
-            "dist/MK-WOBBLE-BASS-${VERSION}-macOS-universal.zip"
+            "dist/WOBBLE-MACHINE-${VERSION}-macOS-universal.zip"
           shasum -a 256 dist/* > dist/SHA256SUMS
           ls -lh dist
 
@@ -213,5 +213,5 @@ jobs:
         run: |
           set -euo pipefail
           gh release view "$TAG" >/dev/null 2>&1 \
-            || gh release create "$TAG" --title "$TAG" --notes "MK WOBBLE BASS $TAG"
+            || gh release create "$TAG" --title "$TAG" --notes "WOBBLE MACHINE $TAG"
           gh release upload "$TAG" dist/* --clobber

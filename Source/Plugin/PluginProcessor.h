@@ -42,6 +42,7 @@ public:
 
     void loadNext (int direction);
     void loadDefault();
+    void setName (const juce::String& newName, const juce::String& newCategory);
 
     const juce::String& currentName() const noexcept { return name; }
     juce::String currentCategory() const noexcept { return category; }
@@ -87,7 +88,7 @@ public:
 #if defined(JucePlugin_Name)
         return JucePlugin_Name;
 #else
-        return "MK WOBBLE BASS";
+        return "WOBBLE MACHINE";
 #endif
     }
     bool acceptsMidi() const override { return true; }
@@ -108,6 +109,10 @@ public:
     juce::MidiKeyboardState keyboardState;
     Engine engine;
     PresetManager presets;
+
+    // RANDOM BASS: generates a new patch on the message thread and pushes it
+    // through the parameters, so the host records it like any other edit.
+    void randomize();
 
     // MIDI learn
     void startMidiLearn (int paramIndex);

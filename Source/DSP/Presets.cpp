@@ -2,6 +2,8 @@
 #include "DSP/MkCommon.h"
 
 #include <cctype>
+#include <cmath>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 
@@ -29,7 +31,7 @@ const FactoryPreset kPresets[] = {
     // ---------------------------------------------------------------- Dubstep
     { "Dubstep", "Dubstep Growler",
       "osc1Wave=0;osc2Mode=1;osc2Wave=4;osc2Fm=0.55;osc2Ratio=2.5;fltCutoff=700;fltType=1;"
-      "wobDiv=3;wobDepth=0.7;wobFm=0.5;subLevel=0.55;distType=3;distDrive=0.4;macGrowl=0.2" },
+      "wobDiv=3;wobDepth=0.7;wobFm=0.5;subLevel=0.55;distType=3;distDrive=0.4;easyGrowl=0.6" },
     { "Dubstep", "Dubstep Yoi",
       "osc1Wave=6;osc1Bank=7;osc1Pos=0.4;osc2Mode=1;osc2Fm=0.4;osc2Wave=4;fltCutoff=900;"
       "fltReso=0.5;wobDiv=3;wobShape=2;wobDepth=0.6;wobWt=0.6;distType=5;distDrive=0.35;subLevel=0.5" },
@@ -43,7 +45,7 @@ const FactoryPreset kPresets[] = {
     // ---------------------------------------------------------------- Riddim
     { "Riddim", "Riddim Wob",
       "osc1Wave=1;fltCutoff=380;fltType=2;fltReso=0.28;wobDiv=10;wobDepth=0.65;wobShape=4;"
-      "subLevel=0.55;distType=2;distDrive=0.45;distMix=0.55;cpOn=1;macDrive=0.2" },
+      "subLevel=0.55;distType=2;distDrive=0.45;distMix=0.55;cpOn=1;easyGrit=0.6" },
     { "Riddim", "Riddim Grinder",
       "osc1Wave=1;osc1Oct=-1;osc2Mode=1;osc2Wave=4;osc2Fm=0.7;osc2Ratio=1.5;fltCutoff=420;"
       "wobDiv=10;wobShape=4;wobFm=0.6;distType=7;distDrive=0.5;subLevel=0.5" },
@@ -89,10 +91,10 @@ const FactoryPreset kPresets[] = {
       "osc2Oct=-1;fltCutoff=480;fltType=1;wobDepth=0.25;wobDiv=2;subLevel=0.55;distType=3;distDrive=0.25" },
     { "Reese Bass", "Reese Wide",
       "osc1Wave=0;osc1Uni=4;osc1Detune=30;osc1Spread=1;fltCutoff=620;fltType=2;wobDepth=0.2;"
-      "wobDiv=2;chOn=1;chMix=0.4;chWidth=0.9;subLevel=0.5;macWidth=0.3" },
+      "wobDiv=2;chOn=1;chMix=0.4;chWidth=0.9;subLevel=0.5;easyWidth=0.65" },
     { "Reese Bass", "Reese Dread",
       "osc1Wave=0;osc1Oct=-1;osc1Uni=3;osc1Detune=18;fltCutoff=280;fltType=8;fltReso=0.35;"
-      "wobDepth=0.3;wobDiv=;subLevel=0.65;subDrive=0.25;distType=10;distDrive=0.35" },
+      "wobDepth=0.3;wobDiv=2;subLevel=0.65;subDrive=0.25;distType=10;distDrive=0.35" },
     { "Reese Bass", "Reese Moving",
       "osc1Wave=0;osc1Uni=2;osc1Detune=24;fltCutoff=520;fltType=1;lfo1Depth=0.8;lfo1Div=4;"
       "mat1Src=1;mat1Dst=2;mat1Amt=0.35;wobDepth=0.3;subLevel=0.55;mbOn=1" },
@@ -208,6 +210,22 @@ const FactoryPreset kPresets[] = {
     { "Experimental", "Broken Radio",
       "osc1Wave=6;osc1Bank=2;osc1Pos=0.8;fltType=4;fltCutoff=1300;wobShape=9;wobDiv=11;"
       "wobDepth=0.6;distType=7;distDrive=0.6;distMix=0.7;phOn=1;phMix=0.3;rvOn=1;rvMix=0.25" },
+
+    // ---------------------------------------------------------------- Signature
+    // The six EASY-page characters as finished patches: pick one, press play,
+    // turn BASS / GRIT / WOBBLE to taste.
+    { "Signature", "WM Wobble",
+      "bassChar=0;morphChar=2;wobDiv=13;wobDepth=0.8;wobCut=0.9;fltCutoff=420;fltType=1;subLevel=0.55" },
+    { "Signature", "WM Growl",
+      "bassChar=1;morphChar=4;wobDiv=3;osc1Wave=0;fltCutoff=520;fltType=8;subLevel=0.5" },
+    { "Signature", "WM Reese",
+      "bassChar=2;osc1Wave=0;osc1Uni=4;osc1Detune=28;wobDiv=2;fltCutoff=480;fltType=1;subLevel=0.55" },
+    { "Signature", "WM Neuro",
+      "bassChar=3;osc1Wave=6;osc1Bank=3;osc1Pos=0.55;wobDiv=14;fltCutoff=700;fltType=9;subLevel=0.45" },
+    { "Signature", "WM Scream",
+      "bassChar=4;osc1Wave=1;wobDiv=9;fltCutoff=900;fltType=9;subLevel=0.4" },
+    { "Signature", "WM Talking",
+      "bassChar=5;osc1Wave=6;osc1Bank=6;osc1Pos=0.3;wobDiv=9;fltCutoff=600;formantMix=0.5;subLevel=0.5" },
 };
 
 constexpr int kPresetCount = (int) (sizeof (kPresets) / sizeof (kPresets[0]));
@@ -219,6 +237,24 @@ int indexOfParam (const char* name) noexcept
             return i;
     return -1;
 }
+
+struct SimpleRng
+{
+    uint32_t state;
+
+    uint32_t next() noexcept
+    {
+        state ^= state << 13;
+        state ^= state >> 17;
+        state ^= state << 5;
+        return state;
+    }
+
+    float unit() noexcept { return (float) (next() >> 8) * (1.0f / 16777216.0f); }
+    float range (float lo, float hi) noexcept { return lo + (hi - lo) * unit(); }
+    int range (int lo, int hi) noexcept { return lo + (int) (next() % (uint32_t) (hi - lo + 1)); }
+    bool chance (float p) noexcept { return unit() < p; }
+};
 
 } // namespace
 
@@ -296,6 +332,90 @@ bool applyFactoryPreset (int index, ParamSnapshot& snapshot) noexcept
 {
     resetSnapshotToDefaults (snapshot);
     return applyPresetString (factoryPreset (index).settings, snapshot);
+}
+
+void makeRandomBass (ParamSnapshot& snapshot, uint32_t seed) noexcept
+{
+    resetSnapshotToDefaults (snapshot);
+    SimpleRng rng { seed == 0 ? 0x9E3779B9u : seed };
+
+    snapshot[P::bassChar] = (float) rng.range (0, kCharacterCount - 1);
+    snapshot[P::morphChar] = (float) rng.range (0, kCharacterCount - 1);
+    snapshot[P::bassMorph] = rng.chance (0.45f) ? 0.0f : rng.range (0.0f, 0.6f);
+
+    static const int waves[] = { WaveSaw, WaveSquare, WavePulse, WaveTriangle,
+                                 WaveSupersaw, WaveWavetable, WaveFM };
+    snapshot[P::osc1Wave] = (float) waves[rng.range (0, 6)];
+    snapshot[P::osc1Bank] = (float) rng.range (0, 7);
+    snapshot[P::osc1Pos] = rng.range (0.15f, 0.8f);
+    snapshot[P::osc1Uni] = (float) rng.range (1, 4);
+    snapshot[P::osc1Detune] = rng.range (6.0f, 30.0f);
+    snapshot[P::osc1Spread] = rng.range (0.3f, 0.9f);
+    snapshot[P::osc1Pw] = rng.range (0.25f, 0.75f);
+
+    static const int filters[] = { FilterLP24, FilterLP36, FilterLadder, FilterDiode,
+                                   FilterSvf, FilterComb };
+    snapshot[P::fltType] = (float) filters[rng.range (0, 5)];
+    snapshot[P::fltCutoff] = 160.0f * std::exp2 (rng.range (0.6f, 2.6f));
+    snapshot[P::fltReso] = rng.range (0.2f, 0.55f);
+    snapshot[P::fltDrive] = rng.range (0.1f, 0.5f);
+    snapshot[P::fltEnvAmt] = rng.range (0.6f, 2.8f);
+
+    static const int divisions[] = { 2, 3, 4, 9, 10, 13, 14, 15 };
+    snapshot[P::wobMode] = 0.0f;   // SMART WOBBLE: always locked to the host
+    snapshot[P::wobDiv] = (float) divisions[rng.range (0, 7)];
+    snapshot[P::wobDepth] = rng.range (0.55f, 0.9f);
+    snapshot[P::wobShape] = (float) rng.range (0, 5);
+    snapshot[P::wobCut] = rng.range (0.6f, 1.0f);
+    snapshot[P::wobFm] = rng.range (0.0f, 0.6f);
+    snapshot[P::wobWt] = rng.range (0.0f, 0.7f);
+    snapshot[P::wobReso] = rng.range (0.0f, 0.5f);
+    snapshot[P::wobDrive] = rng.range (0.0f, 0.5f);
+
+    static const int distortionTypes[] = { DistSoftClip, DistHardClip, DistTube, DistDiode,
+                                           DistFoldback, DistWavefold, DistDigital,
+                                           DistMultistage };
+    snapshot[P::distType] = (float) distortionTypes[rng.range (0, 7)];
+    snapshot[P::distDrive] = rng.range (0.2f, 0.6f);
+    snapshot[P::distMix] = rng.range (0.3f, 0.7f);
+    snapshot[P::distRoute] = 1.0f;
+
+    snapshot[P::subLevel] = rng.range (0.35f, 0.75f);
+    snapshot[P::subOct] = (float) rng.range (0, 1);
+    snapshot[P::subLock] = 1.0f;
+
+    snapshot[P::easyWobble] = rng.range (0.4f, 0.75f);
+    snapshot[P::easyBass] = rng.range (0.4f, 0.7f);
+    snapshot[P::easyGrowl] = rng.range (0.35f, 0.7f);
+    snapshot[P::easyGrit] = rng.range (0.4f, 0.7f);
+    snapshot[P::easyMovement] = rng.range (0.35f, 0.65f);
+    snapshot[P::easyWidth] = rng.range (0.35f, 0.65f);
+
+    snapshot[P::ampA] = rng.range (1.0f, 8.0f);
+    snapshot[P::ampD] = rng.range (120.0f, 700.0f);
+    snapshot[P::ampS] = rng.range (0.5f, 0.95f);
+    snapshot[P::ampR] = rng.range (60.0f, 260.0f);
+    snapshot[P::outputDb] = rng.range (-6.0f, -2.0f);
+
+    if (rng.chance (0.35f))
+    {
+        snapshot[P::dlOn] = 1.0f;
+        snapshot[P::dlMix] = rng.range (0.12f, 0.3f);
+        snapshot[P::dlDiv] = (float) rng.range (10, 15);
+    }
+    if (rng.chance (0.25f))
+    {
+        snapshot[P::rvOn] = 1.0f;
+        snapshot[P::rvMix] = rng.range (0.1f, 0.25f);
+    }
+    if (rng.chance (0.3f))
+    {
+        snapshot[P::chOn] = 1.0f;
+        snapshot[P::chMix] = rng.range (0.1f, 0.35f);
+    }
+
+    snapshot[P::cpOn] = 1.0f;
+    snapshot[P::gateOn] = 0.0f;
 }
 
 bool presetMatches (const char* name, const char* category, const char* query) noexcept

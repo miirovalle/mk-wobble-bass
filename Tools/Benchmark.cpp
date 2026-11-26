@@ -22,6 +22,7 @@ struct Scenario
     int voiceCount;
     bool effectsOn;
     bool distortionOn;
+    bool ottOn = false;
 };
 
 struct Result
@@ -57,6 +58,12 @@ Result measure (const Scenario& scenario, double seconds)
         snapshot.values[(int) mk::P::dlOn] = 1.0f;
         snapshot.values[(int) mk::P::rvOn] = 1.0f;
         snapshot.values[(int) mk::P::mbOn] = 1.0f;
+        if (scenario.ottOn)
+        {
+            snapshot.values[(int) mk::P::ottOn] = 1.0f;
+            snapshot.values[(int) mk::P::ottAmount] = 0.9f;
+            snapshot.values[(int) mk::P::ottMix] = 1.0f;
+        }
     }
     else
     {
@@ -107,10 +114,11 @@ int main()
         { "4 voices, all FX on", 1, 4, true, true },
         { "8 voices, all FX on", 1, 8, true, true },
         { "8 voices, neuro preset", 17, 8, true, true },
+        { "8 voices, OTT on", 1, 8, true, true, true },
         { "16 voices, all FX on", 1, 16, true, true },
     };
 
-    std::printf ("MK WOBBLE BASS - 48 kHz, 128-sample blocks, Release build\n");
+    std::printf ("WOBBLE MACHINE - 48 kHz, 128-sample blocks, Release build\n");
     std::printf ("%-28s %10s %12s %14s\n", "scenario", "% of core", "realtime x", "ms CPU/s audio");
 
     for (const auto& scenario : scenarios)

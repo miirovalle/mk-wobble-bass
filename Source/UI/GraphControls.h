@@ -16,7 +16,7 @@ class ParamKnob final : public juce::Component
 {
 public:
     ParamKnob (juce::AudioProcessorValueTreeState& state, int paramIndex,
-               const juce::String& labelOverride = {});
+               const juce::String& labelOverride = {}, bool large = false);
     ~ParamKnob() override;
 
     void paint (juce::Graphics&) override;
@@ -27,8 +27,30 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> attachment;
     juce::String labelText;
     int index = 0;
+    bool isLarge = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ParamKnob)
+};
+
+// Dropdown bound to a choice parameter (filter type, waveform, route...).
+class ParamChoice final : public juce::Component
+{
+public:
+    ParamChoice (juce::AudioProcessorValueTreeState& state, int paramIndex,
+                 const juce::String& labelOverride = {});
+    ~ParamChoice() override;
+
+    void paint (juce::Graphics&) override;
+    void resized() override;
+
+    juce::ComboBox& box() noexcept { return combo; }
+
+private:
+    juce::ComboBox combo;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> attachment;
+    juce::String labelText;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ParamChoice)
 };
 
 // Rotary that picks what the wobble modulates. It is not a parameter: changing
@@ -154,6 +176,26 @@ private:
     float peak = 0.0f;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (WaveScope)
+};
+
+// Rolling picture of the wobble itself: the SMART WOBBLE strip on the EASY page.
+class WobbleStrip final : public juce::Component, private juce::Timer
+{
+public:
+    explicit WobbleStrip (const Engine&);
+    ~WobbleStrip() override;
+
+    void paint (juce::Graphics&) override;
+
+private:
+    void timerCallback() override;
+
+    const Engine& engine;
+    std::array<float, 512> trace {};
+    float rateHz = 0.0f;
+    int shape = 0;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (WobbleStrip)
 };
 
 // Compact output meter for the header.

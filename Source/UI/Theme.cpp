@@ -22,6 +22,10 @@ MkLookAndFeel::MkLookAndFeel()
     setColour (juce::Label::textColourId, theme::text());
     setColour (juce::Slider::textBoxTextColourId, theme::text());
     setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+    setColour (juce::Slider::textBoxBackgroundColourId, theme::panelLight());
+    setColour (juce::Slider::trackColourId, theme::accentDeep());
+    setColour (juce::Slider::backgroundColourId, theme::outline());
+    setColour (juce::Slider::thumbColourId, theme::accent());
     setColour (juce::TextEditor::backgroundColourId, theme::panelLight());
     setColour (juce::TextEditor::textColourId, theme::text());
     setColour (juce::TextEditor::outlineColourId, theme::outline());
@@ -135,6 +139,40 @@ void MkLookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& but
     g.setColour (highlighted ? theme::text() : theme::textDim());
     g.setFont (theme::labelFont (13.0f));
     g.drawFittedText (button.getButtonText(), bounds.toNearestInt(), juce::Justification::centredLeft, 1);
+}
+
+void MkLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, int y, int width, int height,
+                                      float sliderPos, float minSliderPos, float maxSliderPos,
+                                      juce::Slider::SliderStyle style, juce::Slider& slider)
+{
+    if (style != juce::Slider::LinearHorizontal)
+    {
+        LookAndFeel_V4::drawLinearSlider (g, x, y, width, height, sliderPos,
+                                          minSliderPos, maxSliderPos, style, slider);
+        return;
+    }
+
+    auto bounds = juce::Rectangle<float> ((float) x, (float) y, (float) width, (float) height);
+    auto track = bounds.withSizeKeepingCentre (juce::jmax (0.0f, bounds.getWidth() - 2.0f), 6.0f);
+
+    g.setColour (slider.findColour (juce::Slider::backgroundColourId));
+    g.fillRoundedRectangle (track, 3.0f);
+
+    // Amount is bipolar, so the fill grows out of the centre.
+    const float centre = track.getCentreX();
+    const float clamped = juce::jlimit (track.getX(), track.getRight(), sliderPos);
+    const float left = juce::jmin (centre, clamped);
+    const float right = juce::jmax (centre, clamped);
+
+    if (right - left > 0.5f)
+    {
+        g.setColour (slider.findColour (juce::Slider::trackColourId));
+        g.fillRoundedRectangle (juce::Rectangle<float> (left, track.getY(), right - left, track.getHeight()),
+                                3.0f);
+    }
+
+    g.setColour (slider.findColour (juce::Slider::thumbColourId));
+    g.fillEllipse (juce::Rectangle<float> (11.0f, 11.0f).withCentre ({ clamped, track.getCentreY() }));
 }
 
 juce::Font MkLookAndFeel::getComboBoxFont (juce::ComboBox&)
